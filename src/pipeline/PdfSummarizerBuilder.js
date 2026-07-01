@@ -2,7 +2,7 @@ const path = require('path');
 const { createLogger } = require('../modules/logger');
 const { listPdfs } = require('../modules/scanner');
 const { extractBatch } = require('../modules/extractor');
-const { exportCsv, exportXml } = require('../modules/exporter');
+const { exportCsv, exportXlsx } = require('../modules/exporter');
 const { createServer } = require('../modules/linker');
 
 class PdfSummarizerBuilder {
@@ -12,7 +12,7 @@ class PdfSummarizerBuilder {
     this._logsDir = './logs';
     this._recursive = false;
     this._overwrite = false;
-    this._formats = ['csv', 'xml'];
+    this._formats = ['csv', 'xlsx'];
     this._serve = true;
     this._port = 4000;
     this._host = '127.0.0.1';
@@ -129,9 +129,13 @@ class PdfSummarizerPipeline {
       this.logger.info('CSV exported', exports.csv);
     }
 
-    if (config.formats.includes('xml') && batch.results.length > 0) {
-      exports.xml = await exportXml(batch.results, config.outputDir);
-      this.logger.info('XML exported', exports.xml);
+    const wantsExcel = config.formats.some((format) =>
+      ['xlsx', 'xls', 'excel'].includes(format),
+    );
+
+    if (wantsExcel && batch.results.length > 0) {
+      exports.xlsx = await exportXlsx(batch.results, config.outputDir);
+      this.logger.info('Excel exported', exports.xlsx);
     }
 
     if (config.serve) {

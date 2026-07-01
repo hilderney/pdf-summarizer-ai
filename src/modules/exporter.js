@@ -2,9 +2,9 @@ const fs = require('fs/promises');
 const path = require('path');
 const { ExportError } = require('../errors');
 const { createCsvWriterAdapter } = require('../adapters/csvWriterAdapter');
-const { createXmlBuilderAdapter } = require('../adapters/xmlBuilderAdapter');
+const { createExcelWriterAdapter } = require('../adapters/excelWriterAdapter');
 
-const CSV_HEADERS = [
+const EXPORT_HEADERS = [
   { id: 'filename', title: 'filename' },
   { id: 'source_pdf', title: 'source_pdf' },
   { id: 'extracted_at', title: 'extracted_at' },
@@ -37,7 +37,6 @@ async function exportCsv(results, outputDir, options = {}) {
   const {
     fileName = buildExportFileName('csv'),
     csvWriterAdapter = createCsvWriterAdapter(),
-    fsImpl = fs,
   } = options;
 
   const absoluteOutputDir = path.resolve(outputDir);
@@ -45,7 +44,7 @@ async function exportCsv(results, outputDir, options = {}) {
   const rows = toExportRows(results);
 
   try {
-    await csvWriterAdapter.write(filePath, rows, CSV_HEADERS);
+    await csvWriterAdapter.write(filePath, rows, EXPORT_HEADERS);
   } catch (error) {
     throw new ExportError(`Failed to write CSV: ${filePath}`, error);
   }
@@ -53,13 +52,12 @@ async function exportCsv(results, outputDir, options = {}) {
   return { filePath: path.resolve(filePath) };
 }
 
-async function exportXml(results, outputDir, options = {}) {
+async function exportXlsx(results, outputDir, options = {}) {
   assertNonEmptyResults(results);
 
   const {
-    fileName = buildExportFileName('xml'),
-    xmlBuilderAdapter = createXmlBuilderAdapter(),
-    fsImpl = fs,
+    fileName = buildExportFileName('xlsx'),
+    excelWriterAdapter = createExcelWriterAdapter(),
   } = options;
 
   const absoluteOutputDir = path.resolve(outputDir);
@@ -67,17 +65,9 @@ async function exportXml(results, outputDir, options = {}) {
   const rows = toExportRows(results);
 
   try {
-    await xmlBuilderAdapter.write(filePath, {
-      generatedAt: new Date().toISOString(),
-      items: rows.map((row) => ({
-        filename: row.filename,
-        sourcePdf: row.source_pdf,
-        extractedAt: row.extracted_at,
-        content: row.content,
-      })),
-    });
+    await excelWriterAdapter.write(filePath, rows, EXPORT_HEADERS);
   } catch (error) {
-    throw new ExportError(`Failed to write XML: ${filePath}`, error);
+    throw new ExportError(`Failed to write Excel: ${filePath}`, error);
   }
 
   return { filePath: path.resolve(filePath) };
@@ -85,6 +75,7 @@ async function exportXml(results, outputDir, options = {}) {
 
 module.exports = {
   exportCsv,
-  exportXml,
-  CSV_HEADERS,
+  exportXlsx,
+  EXPORT_HEADERS,
+  CSV_HEADERS: EXPORT_HEADERS,
 };

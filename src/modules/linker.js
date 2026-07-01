@@ -8,7 +8,8 @@ const CONTENT_TYPES = {
   '.pdf': 'application/pdf',
   '.txt': 'text/plain; charset=utf-8',
   '.csv': 'text/csv; charset=utf-8',
-  '.xml': 'text/xml; charset=utf-8',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls': 'application/vnd.ms-excel',
   '.json': 'application/json; charset=utf-8',
   '.log': 'text/plain; charset=utf-8',
 };

@@ -1,8 +1,8 @@
 const fs = require('fs/promises');
 const path = require('path');
-const { exportCsv, exportXml } = require('../src/modules/exporter');
+const ExcelJS = require('exceljs');
+const { exportCsv, exportXlsx } = require('../src/modules/exporter');
 const { ExportError } = require('../src/errors');
-const { create } = require('xmlbuilder2');
 const { createTempDir } = require('./helpers/fixtures');
 
 function buildResults(overrides = {}) {
@@ -17,6 +17,12 @@ function buildResults(overrides = {}) {
       ...overrides,
     },
   ];
+}
+
+async function readWorksheet(filePath) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  return workbook.getWorksheet('documents');
 }
 
 describe('exporter — CSV', () => {
@@ -84,66 +90,68 @@ describe('exporter — CSV', () => {
   });
 });
 
-describe('exporter — XML', () => {
+describe('exporter — Excel', () => {
   let outputDir;
 
   beforeEach(async () => {
-    outputDir = await createTempDir('exporter-xml-');
+    outputDir = await createTempDir('exporter-xlsx-');
   });
 
   afterEach(async () => {
     await fs.rm(outputDir, { recursive: true, force: true });
   });
 
-  test('[RED-24] deve gerar um arquivo .xml bem-formado (tag raiz <documents>)', async () => {
-    const { filePath } = await exportXml(buildResults(), outputDir, {
-      fileName: 'export.xml',
+  test('[RED-24] deve gerar um arquivo .xlsx com planilha documents', async () => {
+    const { filePath } = await exportXlsx(buildResults(), outputDir, {
+      fileName: 'export.xlsx',
     });
-    const content = await fs.readFile(filePath, 'utf8');
 
-    expect(content).toContain('<documents');
-    expect(content).toContain('generated_at=');
+    const worksheet = await readWorksheet(filePath);
+    expect(worksheet).toBeDefined();
+    expect(worksheet.name).toBe('documents');
   });
 
-  test('[RED-25] cada item deve ser uma tag <document> com atributos filename e extracted_at', async () => {
-    const { filePath } = await exportXml(buildResults(), outputDir, {
-      fileName: 'export.xml',
+  test('[RED-25] deve incluir cabeçalhos filename, source_pdf, extracted_at e content', async () => {
+    const { filePath } = await exportXlsx(buildResults(), outputDir, {
+      fileName: 'export.xlsx',
     });
-    const content = await fs.readFile(filePath, 'utf8');
+    const worksheet = await readWorksheet(filePath);
+    const headerRow = worksheet.getRow(1).values.slice(1);
 
-    expect(content).toContain('<document filename="doc.txt"');
-    expect(content).toContain('source_pdf="doc.pdf"');
-    expect(content).toContain('extracted_at="2026-06-29T15:00:00.000Z"');
+    expect(headerRow).toEqual(['filename', 'source_pdf', 'extracted_at', 'content']);
   });
 
-  test('[RED-26] o conteúdo de texto deve estar dentro de <content><![CDATA[...]]></content>', async () => {
-    const { filePath } = await exportXml(buildResults(), outputDir, {
-      fileName: 'export.xml',
+  test('[RED-26] o conteúdo extraído deve estar na coluna content', async () => {
+    const { filePath } = await exportXlsx(buildResults(), outputDir, {
+      fileName: 'export.xlsx',
     });
-    const content = await fs.readFile(filePath, 'utf8');
+    const worksheet = await readWorksheet(filePath);
+    const dataRow = worksheet.getRow(2).values.slice(1);
 
-    expect(content).toContain('<content><![CDATA[Texto extraído...]]></content>');
+    expect(dataRow[0]).toBe('doc.txt');
+    expect(dataRow[1]).toBe('doc.pdf');
+    expect(dataRow[2]).toBe('2026-06-29T15:00:00.000Z');
+    expect(dataRow[3]).toBe('Texto extraído...');
   });
 
-  test('[RED-27] o arquivo XML gerado deve ser válido (parseável por xmlbuilder2 ou parser)', async () => {
-    const { filePath } = await exportXml(buildResults(), outputDir, {
-      fileName: 'export.xml',
+  test('[RED-27] o arquivo Excel gerado deve ser válido (parseável por exceljs)', async () => {
+    const { filePath } = await exportXlsx(buildResults(), outputDir, {
+      fileName: 'export.xlsx',
     });
-    const content = await fs.readFile(filePath, 'utf8');
 
-    expect(() => create(content)).not.toThrow();
+    await expect(readWorksheet(filePath)).resolves.toBeDefined();
   });
 
-  test('[RED-28] deve retornar o caminho absoluto do arquivo .xml gerado', async () => {
-    const { filePath } = await exportXml(buildResults(), outputDir, {
-      fileName: 'export.xml',
+  test('[RED-28] deve retornar o caminho absoluto do arquivo .xlsx gerado', async () => {
+    const { filePath } = await exportXlsx(buildResults(), outputDir, {
+      fileName: 'export.xlsx',
     });
 
     expect(path.isAbsolute(filePath)).toBe(true);
-    expect(filePath).toBe(path.join(outputDir, 'export.xml'));
+    expect(filePath).toBe(path.join(outputDir, 'export.xlsx'));
   });
 
   test('[RED-29] deve lançar ExportError se o array de entrada estiver vazio', async () => {
-    await expect(exportXml([], outputDir)).rejects.toThrow(ExportError);
+    await expect(exportXlsx([], outputDir)).rejects.toThrow(ExportError);
   });
 });

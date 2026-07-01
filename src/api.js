@@ -2,7 +2,7 @@ const { PdfSummarizerBuilder } = require('./pipeline/PdfSummarizerBuilder');
 const { createLogger } = require('./modules/logger');
 const { listPdfs } = require('./modules/scanner');
 const { extractText, extractBatch } = require('./modules/extractor');
-const { exportCsv, exportXml } = require('./modules/exporter');
+const { exportCsv, exportXlsx } = require('./modules/exporter');
 const { createServer } = require('./modules/linker');
 const errors = require('./errors');
 const adapters = require('./adapters');
@@ -14,7 +14,7 @@ module.exports = {
   extractText,
   extractBatch,
   exportCsv,
-  exportXml,
+  exportXlsx,
   createServer,
   errors,
   adapters,

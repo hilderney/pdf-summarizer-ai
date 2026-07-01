@@ -30,7 +30,7 @@ describe('linker', () => {
     outputDir = await createTempDir('linker-test-');
     await writeTextFile(outputDir, 'sample.txt', 'hello txt');
     await writeTextFile(outputDir, 'sample.csv', 'a,b');
-    await writeTextFile(outputDir, 'sample.xml', '<root/>');
+    await writeTextFile(outputDir, 'sample.xlsx', 'PK fake');
     await writeTextFile(outputDir, 'sample.pdf', '%PDF fake');
   });
 
@@ -78,18 +78,20 @@ describe('linker', () => {
     expect(JSON.parse(response.body)).toEqual({ error: 'File not found' });
   });
 
-  test('[RED-34] deve retornar Content-Type correto: application/pdf, text/plain, text/csv, text/xml', async () => {
+  test('[RED-34] deve retornar Content-Type correto: application/pdf, text/plain, text/csv, application/vnd...xlsx', async () => {
     server = await createServer({ port: 0, outputDir });
 
     const pdf = await request(`${server.url}/open/sample.pdf`);
     const txt = await request(`${server.url}/open/sample.txt`);
     const csv = await request(`${server.url}/open/sample.csv`);
-    const xml = await request(`${server.url}/open/sample.xml`);
+    const xlsx = await request(`${server.url}/open/sample.xlsx`);
 
     expect(pdf.headers['content-type']).toContain('application/pdf');
     expect(txt.headers['content-type']).toContain('text/plain');
     expect(csv.headers['content-type']).toContain('text/csv');
-    expect(xml.headers['content-type']).toContain('text/xml');
+    expect(xlsx.headers['content-type']).toContain(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
   });
 
   test('[RED-35] deve rejeitar path traversal (e.g. ../../etc/passwd → 400)', async () => {

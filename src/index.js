@@ -17,7 +17,7 @@ async function main() {
     .outputTo(path.resolve(outputDir))
     .withLogs('./logs')
     .recursive(false)
-    .exportFormats(['csv', 'xml'])
+    .exportFormats(['csv', 'xlsx'])
     .serveLinks(4000)
     .build();
 
@@ -34,8 +34,8 @@ async function main() {
     if (summary.exports.csv) {
       console.log(`CSV:               ${summary.exports.csv.filePath}`);
     }
-    if (summary.exports.xml) {
-      console.log(`XML:               ${summary.exports.xml.filePath}`);
+    if (summary.exports.xlsx) {
+      console.log(`Excel:             ${summary.exports.xlsx.filePath}`);
     }
     if (summary.serverUrl) {
       console.log(`Links:             ${summary.serverUrl}/files`);

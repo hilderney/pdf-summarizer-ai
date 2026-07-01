@@ -26,7 +26,7 @@ describe('PdfSummarizerBuilder', () => {
       .fromDirectory(inputDir)
       .outputTo(outputDir)
       .withLogs(logsDir)
-      .exportFormats(['csv', 'xml'])
+      .exportFormats(['csv', 'xlsx'])
       .withoutServer()
       .build();
 
@@ -37,7 +37,7 @@ describe('PdfSummarizerBuilder', () => {
     expect(summary.extracted).toBe(1);
     expect(summary.failed).toBe(0);
     expect(summary.exports.csv.filePath).toContain('.csv');
-    expect(summary.exports.xml.filePath).toContain('.xml');
+    expect(summary.exports.xlsx.filePath).toContain('.xlsx');
     await expect(fs.access(path.join(outputDir, 'doc.txt'))).resolves.toBeUndefined();
     await expect(fs.access(summary.logFile)).resolves.toBeUndefined();
   });
