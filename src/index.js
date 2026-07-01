@@ -31,11 +31,11 @@ async function main() {
     console.log(`Falhas:            ${summary.failed}`);
     console.log(`Log:               ${summary.logFile}`);
 
-    if (summary.exports.csv) {
-      console.log(`CSV:               ${summary.exports.csv.filePath}`);
+    for (const csv of summary.exports.csv) {
+      console.log(`CSV:               ${csv.filePath}`);
     }
-    if (summary.exports.xlsx) {
-      console.log(`Excel:             ${summary.exports.xlsx.filePath}`);
+    for (const xlsx of summary.exports.xlsx) {
+      console.log(`Excel:             ${xlsx.filePath}`);
     }
     if (summary.serverUrl) {
       console.log(`Links:             ${summary.serverUrl}/files`);

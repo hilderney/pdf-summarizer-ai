@@ -3,8 +3,13 @@ const path = require('path');
 const { ExportError } = require('../errors');
 const { createCsvWriterAdapter } = require('../adapters/csvWriterAdapter');
 const { createExcelWriterAdapter } = require('../adapters/excelWriterAdapter');
+const {
+  createTableParserAdapter,
+  TABLE_EXPORT_HEADERS,
+} = require('../adapters/tableParserAdapter');
+const { sanitizeBaseName } = require('../utils/paths');
 
-const EXPORT_HEADERS = [
+const LEGACY_HEADERS = [
   { id: 'filename', title: 'filename' },
   { id: 'source_pdf', title: 'source_pdf' },
   { id: 'extracted_at', title: 'extracted_at' },
@@ -17,7 +22,24 @@ function assertNonEmptyResults(results) {
   }
 }
 
-function toExportRows(results) {
+function buildExportFileNameFromPdf(inputFile, extension) {
+  return `${sanitizeBaseName(inputFile)}.${extension}`;
+}
+
+function resolveExportFileName(results, extension, fileName) {
+  if (fileName) {
+    return fileName;
+  }
+
+  if (results.length === 1) {
+    return buildExportFileNameFromPdf(results[0].inputFile, extension);
+  }
+
+  const date = new Date().toISOString().slice(0, 10);
+  return `export_${date}.${extension}`;
+}
+
+function toLegacyRows(results) {
   return results.map((result) => ({
     filename: path.basename(result.outputFile),
     source_pdf: result.inputFile,
@@ -26,56 +48,137 @@ function toExportRows(results) {
   }));
 }
 
-function buildExportFileName(extension) {
-  const date = new Date().toISOString().slice(0, 10);
-  return `export_${date}.${extension}`;
+function toTableRows(results, options = {}) {
+  const {
+    tableParserAdapter = createTableParserAdapter('auto'),
+    tableOnly = true,
+  } = options;
+
+  const exportRows = [];
+
+  for (const result of results) {
+    const parsed = tableParserAdapter.parse(result.text || '');
+    for (const row of parsed.rows) {
+      if (!row.guia || !row.codigo_procedimento) {
+        if (!tableOnly) {
+          exportRows.push({
+            source_pdf: result.inputFile,
+            guia: row.guia || '',
+            dt_emis: row.dt_emis || '',
+            beneficiario: row.beneficiario || row.content || '',
+            id_beneficiario: row.id_beneficiario || '',
+            pl: row.pl || '',
+            medico: row.medico || '',
+            requisicao: row.requisicao || '',
+            codigo_procedimento: row.codigo_procedimento || '',
+            procedimento: row.procedimento || '',
+            qt: row.qt || '',
+          });
+        }
+        continue;
+      }
+
+      exportRows.push({
+        source_pdf: result.inputFile,
+        guia: row.guia,
+        dt_emis: row.dt_emis,
+        beneficiario: row.beneficiario,
+        id_beneficiario: row.id_beneficiario,
+        pl: row.pl,
+        medico: row.medico,
+        requisicao: row.requisicao,
+        codigo_procedimento: row.codigo_procedimento,
+        procedimento: row.procedimento,
+        qt: row.qt,
+      });
+    }
+  }
+
+  return exportRows;
+}
+
+function resolveExportRows(results, options = {}) {
+  const {
+    tableOnly = true,
+    fallbackToRaw = true,
+    tableParserAdapter = createTableParserAdapter('auto'),
+  } = options;
+
+  const tableRows = toTableRows(results, { tableOnly, tableParserAdapter });
+
+  if (tableRows.length > 0) {
+    return {
+      rows: tableRows,
+      headers: TABLE_EXPORT_HEADERS,
+      mode: 'table',
+    };
+  }
+
+  if (tableOnly && !fallbackToRaw) {
+    throw new ExportError('No table rows found in extraction results');
+  }
+
+  return {
+    rows: toLegacyRows(results),
+    headers: LEGACY_HEADERS,
+    mode: 'raw',
+  };
 }
 
 async function exportCsv(results, outputDir, options = {}) {
   assertNonEmptyResults(results);
 
-  const {
-    fileName = buildExportFileName('csv'),
-    csvWriterAdapter = createCsvWriterAdapter(),
-  } = options;
+  const { csvWriterAdapter = createCsvWriterAdapter(), fileName } = options;
+  const resolvedFileName = resolveExportFileName(results, 'csv', fileName);
 
+  const { rows, headers } = resolveExportRows(results, options);
   const absoluteOutputDir = path.resolve(outputDir);
-  const filePath = path.join(absoluteOutputDir, fileName);
-  const rows = toExportRows(results);
+  const filePath = path.join(absoluteOutputDir, resolvedFileName);
 
   try {
-    await csvWriterAdapter.write(filePath, rows, EXPORT_HEADERS);
+    await csvWriterAdapter.write(filePath, rows, headers);
   } catch (error) {
     throw new ExportError(`Failed to write CSV: ${filePath}`, error);
   }
 
-  return { filePath: path.resolve(filePath) };
+  return {
+    filePath: path.resolve(filePath),
+    rowCount: rows.length,
+    sourcePdf: results.length === 1 ? results[0].inputFile : null,
+  };
 }
 
 async function exportXlsx(results, outputDir, options = {}) {
   assertNonEmptyResults(results);
 
-  const {
-    fileName = buildExportFileName('xlsx'),
-    excelWriterAdapter = createExcelWriterAdapter(),
-  } = options;
+  const { excelWriterAdapter = createExcelWriterAdapter(), fileName } = options;
+  const resolvedFileName = resolveExportFileName(results, 'xlsx', fileName);
 
+  const { rows, headers } = resolveExportRows(results, options);
   const absoluteOutputDir = path.resolve(outputDir);
-  const filePath = path.join(absoluteOutputDir, fileName);
-  const rows = toExportRows(results);
+  const filePath = path.join(absoluteOutputDir, resolvedFileName);
 
   try {
-    await excelWriterAdapter.write(filePath, rows, EXPORT_HEADERS);
+    await excelWriterAdapter.write(filePath, rows, headers);
   } catch (error) {
     throw new ExportError(`Failed to write Excel: ${filePath}`, error);
   }
 
-  return { filePath: path.resolve(filePath) };
+  return {
+    filePath: path.resolve(filePath),
+    rowCount: rows.length,
+    sourcePdf: results.length === 1 ? results[0].inputFile : null,
+  };
 }
 
 module.exports = {
   exportCsv,
   exportXlsx,
-  EXPORT_HEADERS,
-  CSV_HEADERS: EXPORT_HEADERS,
+  resolveExportRows,
+  toTableRows,
+  buildExportFileNameFromPdf,
+  resolveExportFileName,
+  EXPORT_HEADERS: TABLE_EXPORT_HEADERS,
+  CSV_HEADERS: TABLE_EXPORT_HEADERS,
+  LEGACY_HEADERS,
 };

@@ -36,8 +36,10 @@ describe('PdfSummarizerBuilder', () => {
     expect(summary.scanned).toBe(1);
     expect(summary.extracted).toBe(1);
     expect(summary.failed).toBe(0);
-    expect(summary.exports.csv.filePath).toContain('.csv');
-    expect(summary.exports.xlsx.filePath).toContain('.xlsx');
+    expect(summary.exports.csv).toHaveLength(1);
+    expect(summary.exports.xlsx).toHaveLength(1);
+    expect(path.basename(summary.exports.csv[0].filePath)).toBe('doc.csv');
+    expect(path.basename(summary.exports.xlsx[0].filePath)).toBe('doc.xlsx');
     await expect(fs.access(path.join(outputDir, 'doc.txt'))).resolves.toBeUndefined();
     await expect(fs.access(summary.logFile)).resolves.toBeUndefined();
   });

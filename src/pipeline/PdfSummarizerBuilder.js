@@ -122,20 +122,26 @@ class PdfSummarizerPipeline {
       this.logger.error('PDF extraction failed', item.error);
     }
 
-    const exports = {};
+    const exports = { csv: [], xlsx: [] };
 
-    if (config.formats.includes('csv') && batch.results.length > 0) {
-      exports.csv = await exportCsv(batch.results, config.outputDir);
-      this.logger.info('CSV exported', exports.csv);
+    if (config.formats.includes('csv')) {
+      for (const result of batch.results) {
+        const exported = await exportCsv([result], config.outputDir);
+        exports.csv.push(exported);
+        this.logger.info('CSV exported', exported);
+      }
     }
 
     const wantsExcel = config.formats.some((format) =>
       ['xlsx', 'xls', 'excel'].includes(format),
     );
 
-    if (wantsExcel && batch.results.length > 0) {
-      exports.xlsx = await exportXlsx(batch.results, config.outputDir);
-      this.logger.info('Excel exported', exports.xlsx);
+    if (wantsExcel) {
+      for (const result of batch.results) {
+        const exported = await exportXlsx([result], config.outputDir);
+        exports.xlsx.push(exported);
+        this.logger.info('Excel exported', exported);
+      }
     }
 
     if (config.serve) {
