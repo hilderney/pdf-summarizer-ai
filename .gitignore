@@ -77,6 +77,7 @@ web_modules/
 # Next.js build output
 .next
 out
+output/
 
 # Nuxt.js build / generate output
 .nuxt
@@ -141,3 +142,17 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+#specs files
+FASE1.spec.md
+FASE2.spec.md
+FASE3.spec.md
+
+#output files
+output/
+logs/
+
+#pdfs files
+pdfs/
+
+#txt files
