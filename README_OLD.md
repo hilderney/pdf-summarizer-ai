@@ -9,13 +9,19 @@ FASE 1
 5 - Manter um log de passos (O que está acontecendo e o que está fazendo cada parte
 
 FASE 2 
-2.1 - Funções de CRUD de Modelos de LLM (ollama e OpenRouter (inserir o token )
-2.2 - Poder escolher de Listagem de LLMs incluídas (dropdown)
-2.3 - Poder Inserir texto para enviar para LLM processar, (escolher da lista de arquivos (txt, csv, xml o que enviar)
-2.4 - Receber resposta em formato .json da LLM, criar link para a resposta json.
-2.5 - Mostrar um resumo do que a LLM respondeu
+2.1 - Criar interfaces de um software (pode ser html) mas pense em algo que possa ser utilizado com um instalador no funturo para windows e linux.
+2.1.1 - Deixar expostos Endpoints para uso do que foi produzido na Fase1
+2.2 - Funções de CRUD de Modelos de LLM (ollama e OpenRouter (inserir o token )
+2.3 - Poder escolher de Listagem de LLMs incluídas (dropdown)
+2.4 - Poder Inserir texto para enviar para LLM processar, (escolher da lista de arquivos (txt, csv, xlxs o que enviar)
+2.5 - Receber resposta em formato .json da LLM, criar link para a resposta json.
+2.6 - Mostrar um resumo do que a LLM respondeu
 
 FASE 3
 3.1 - Criar um executável que instale o programa para windows
 3.2 - O instalador deve ser um unico arquivo, tipo um standalone app (.exe ou igual)
  
+
+<!-- sudo systemctl start ollama.service -->
+<!-- sudo systemctl stop ollama.service -->
+<!-- sudo systemctl status ollama.service -->

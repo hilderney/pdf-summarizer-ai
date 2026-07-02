@@ -78,6 +78,8 @@ web_modules/
 .next
 out
 output/
+data/
+staging/
 
 # Nuxt.js build / generate output
 .nuxt
@@ -150,6 +152,8 @@ FASE3.spec.md
 
 #output files
 output/
+data/
+staging/
 logs/
 
 #pdfs files
