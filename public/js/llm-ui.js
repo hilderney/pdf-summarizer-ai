@@ -42,6 +42,78 @@ async function refreshSourceFiles() {
 function resetModelForm() {
   document.getElementById('model-id').value = '';
   document.getElementById('model-form').reset();
+  updateTokenFieldHint(null);
+}
+
+function formatTokenStatus(model) {
+  if (model.provider !== 'openrouter') {
+    return '—';
+  }
+  if (model.hasToken) {
+    return '<span class="token-badge token-ok" title="Token criptografado no banco">Configurado ✓</span>';
+  }
+  return '<span class="token-badge token-missing">Pendente</span>';
+}
+
+function updateTokenFieldHint(model) {
+  const hint = document.getElementById('model-token-hint');
+  if (!hint) {
+    return;
+  }
+
+  if (!model) {
+    hint.textContent = '';
+    hint.hidden = true;
+    return;
+  }
+
+  if (model.provider !== 'openrouter') {
+    hint.textContent = 'Ollama não usa token.';
+    hint.hidden = false;
+    return;
+  }
+
+  if (model.hasToken) {
+    hint.textContent =
+      'Token salvo (não exibido por segurança). Deixe em branco para manter ou preencha para substituir.';
+  } else {
+    hint.textContent = 'Informe o token OpenRouter para salvar.';
+  }
+  hint.hidden = false;
+}
+
+function describeHealthCheckFailure(result, model) {
+  if (result.code === 'TOKEN_DECRYPT_FAILED') {
+    return (
+      'O token está salvo, mas não pôde ser lido.\n\n' +
+      'Isso costuma ocorrer quando APP_SECRET_KEY não está definida no .env ' +
+      'e o servidor gerou uma chave temporária ao reiniciar.\n\n' +
+      'Solução: defina APP_SECRET_KEY no .env (veja .env.example) e informe o token novamente em Editar.'
+    );
+  }
+
+  if (result.ok) {
+    return 'Conexão OK';
+  }
+
+  if (model?.provider === 'openrouter' && model.hasToken) {
+    return (
+      'Falha na conexão com o token salvo.\n\n' +
+      'Verifique se o token ainda é válido no OpenRouter ou informe um novo token em Editar.'
+    );
+  }
+
+  return 'Falha na conexão';
+}
+
+function describeProcessError(error) {
+  if (error.payload?.code === 'TOKEN_DECRYPT_FAILED' || /não pôde ser lido/i.test(error.message)) {
+    return (
+      'Erro: token salvo não pôde ser lido. Defina APP_SECRET_KEY no .env ' +
+      'e informe o token novamente em Modelos LLM → Editar.'
+    );
+  }
+  return `Erro: ${error.message}`;
 }
 
 async function refreshModelsTable() {
@@ -57,6 +129,7 @@ async function refreshModelsTable() {
       <td>${model.name}${model.isDefault ? ' ★' : ''}</td>
       <td>${model.provider}</td>
       <td>${model.modelId}</td>
+      <td>${formatTokenStatus(model)}</td>
       <td>
         <button type="button" data-edit="${model.id}">Editar</button>
         <button type="button" data-health="${model.id}">Testar</button>
@@ -75,16 +148,19 @@ async function refreshModelsTable() {
       document.getElementById('model-model-id').value = model.modelId;
       document.getElementById('model-base-url').value = model.baseUrl || '';
       document.getElementById('model-default').checked = model.isDefault;
+      document.getElementById('model-token').value = '';
+      updateTokenFieldHint(model);
     });
   });
 
   tbody.querySelectorAll('[data-health]').forEach((btn) => {
     btn.addEventListener('click', async () => {
+      const model = models.find((item) => item.id === btn.dataset.health);
       try {
         const result = await api.healthCheck(btn.dataset.health);
-        alert(result.ok ? 'Conexão OK' : 'Falha na conexão');
+        alert(describeHealthCheckFailure(result, model));
       } catch (error) {
-        alert(`Erro: ${error.message}`);
+        alert(describeProcessError(error));
       }
     });
   });
@@ -135,6 +211,16 @@ function initLlmUi() {
 
   document.getElementById('btn-reset-model').addEventListener('click', resetModelForm);
 
+  document.getElementById('model-provider').addEventListener('change', () => {
+    const id = document.getElementById('model-id').value;
+    if (!id) {
+      updateTokenFieldHint({
+        provider: document.getElementById('model-provider').value,
+        hasToken: false,
+      });
+    }
+  });
+
   document.getElementById('btn-process').addEventListener('click', async () => {
     const llmModelId = document.getElementById('llm-model-select').value;
     const sourceFile = document.getElementById('source-file-select').value;
@@ -162,7 +248,7 @@ function initLlmUi() {
       linkEl.textContent = result.responseUrl ? 'Abrir resposta JSON' : '';
       await refreshFilesTable();
     } catch (error) {
-      summaryEl.textContent = `Erro: ${error.message}`;
+      summaryEl.textContent = describeProcessError(error);
       summaryEl.className = 'summary card error';
     }
   });

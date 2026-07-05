@@ -1,10 +1,30 @@
-const { ValidationError } = require('../errors');
+const { ValidationError, CryptoError } = require('../errors');
 const { createCryptoAdapter } = require('../adapters/cryptoAdapter');
 const { createLlmAdapter } = require('../adapters/llmAdapter');
 
 const VALID_PROVIDERS = new Set(['ollama', 'openrouter']);
 
+const TOKEN_DECRYPT_HELP =
+  'Token salvo não pôde ser lido. Defina APP_SECRET_KEY estável no .env e informe o token novamente em Editar.';
+
 function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapter() }) {
+  function decryptStoredToken(tokenEncrypted) {
+    if (!tokenEncrypted) {
+      return null;
+    }
+
+    try {
+      return cryptoAdapter.decrypt(tokenEncrypted);
+    } catch (error) {
+      if (error instanceof CryptoError) {
+        const decryptError = new ValidationError(TOKEN_DECRYPT_HELP);
+        decryptError.code = 'TOKEN_DECRYPT_FAILED';
+        decryptError.statusCode = 422;
+        throw decryptError;
+      }
+      throw error;
+    }
+  }
   function validateProvider(provider) {
     if (!VALID_PROVIDERS.has(provider)) {
       throw new ValidationError(`Invalid provider: ${provider}`);
@@ -120,9 +140,25 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
       ? persistence.getLlmModelRaw(id)
       : null;
 
+    let token;
+    try {
+      token = decryptStoredToken(raw?.token_encrypted);
+    } catch (error) {
+      if (error.code === 'TOKEN_DECRYPT_FAILED') {
+        return {
+          ok: false,
+          code: error.code,
+          error: error.message,
+          provider: model.provider,
+          modelId: model.modelId,
+        };
+      }
+      throw error;
+    }
+
     const config = {
       baseUrl: model.baseUrl,
-      token: raw?.token_encrypted ? cryptoAdapter.decrypt(raw.token_encrypted) : undefined,
+      token: token ?? undefined,
     };
 
     const adapter = createLlmAdapter(model.provider);
@@ -140,7 +176,7 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
 
     return {
       ...model,
-      token: raw?.token_encrypted ? cryptoAdapter.decrypt(raw.token_encrypted) : null,
+      token: decryptStoredToken(raw?.token_encrypted),
     };
   }
 

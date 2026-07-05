@@ -8,6 +8,24 @@ class CsvWriterAdapter {
   }
 }
 
+function escapeCsvField(value) {
+  const text = String(value ?? '');
+  if (/[",\n\r]/.test(text)) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function formatSheetLine(cells, separator = '\t') {
+  if (!cells || cells.length === 0) {
+    return '';
+  }
+  if (cells.length === 1) {
+    return cells[0];
+  }
+  return cells.map(escapeCsvField).join(separator);
+}
+
 class CsvWriterLibAdapter extends CsvWriterAdapter {
   async write(filePath, rows, headers) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
@@ -17,6 +35,13 @@ class CsvWriterLibAdapter extends CsvWriterAdapter {
       alwaysQuote: true,
     });
     await writer.writeRecords(rows);
+  }
+
+  async writeSheet(filePath, sheetRows, options = {}) {
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const separator = options.separator || '\t';
+    const lines = sheetRows.map((row) => formatSheetLine(row.cells, separator));
+    await fs.writeFile(filePath, `${lines.join('\n')}\n`, 'utf8');
   }
 }
 

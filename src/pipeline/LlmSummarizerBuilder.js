@@ -142,7 +142,11 @@ class LlmSummarizerApp {
 
     if (!config.secret && !process.env[config.keyEnv]) {
       process.env[config.keyEnv] = crypto.randomBytes(32).toString('hex');
-      this.logger.warn('Generated ephemeral APP_SECRET_KEY for development');
+      const warning =
+        `${config.keyEnv} não definida — chave efêmera gerada. ` +
+        'Tokens salvos não sobrevivem a reinícios. Defina APP_SECRET_KEY no .env (veja .env.example).';
+      this.logger.warn(warning);
+      console.warn(`[pdf-summarizer] ${warning}`);
     }
 
     const cryptoAdapter = createCryptoAdapter(cryptoOptions);

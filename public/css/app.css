@@ -391,3 +391,28 @@ a { color: var(--accent); }
   color: var(--muted);
   text-align: center;
 }
+
+.field-hint {
+  margin: -0.5rem 0 1rem;
+  max-width: 480px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.token-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.token-ok {
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.token-missing {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.12);
+}

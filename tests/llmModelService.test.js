@@ -82,4 +82,24 @@ describe('llmModelService', () => {
       isDefault: true,
     });
   });
+
+  test('[F2-34] healthCheck deve retornar TOKEN_DECRYPT_FAILED quando chave mudou', async () => {
+    const created = await service.create({
+      name: 'OR',
+      provider: 'openrouter',
+      modelId: 'openai/gpt-4o-mini',
+      token: 'sk-old',
+    });
+
+    const wrongKeyService = createLlmModelService({
+      persistence,
+      cryptoAdapter: createCryptoAdapter({ secret: Buffer.alloc(32, 9).toString('hex') }),
+    });
+
+    const result = await wrongKeyService.healthCheck(created.id);
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'TOKEN_DECRYPT_FAILED',
+    });
+  });
 });

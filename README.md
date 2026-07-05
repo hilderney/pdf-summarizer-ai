@@ -112,12 +112,21 @@ await app.start();
 
 ### Variáveis de ambiente (Fase 2)
 
+O arquivo `.env` na raiz do projeto é carregado automaticamente ao iniciar `npm run start:web`. Copie `.env.example` para `.env` e preencha os valores.
+
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `APP_SECRET_KEY` | gerada em dev | Chave AES-256 para tokens OpenRouter |
+| `APP_SECRET_KEY` | gerada em dev (efêmera) | Chave AES-256 para tokens OpenRouter. **Defina uma chave fixa** (hex 64 chars) para tokens sobreviverem a reinícios |
+| `OPENROUTER_API_KEY` | — | Opcional; token global (não substitui token por modelo na UI) |
 | `DB_PATH` | `./data/app.db` | SQLite |
 | `PORT` | `4000` | Porta HTTP |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama local |
+
+Gerar `APP_SECRET_KEY`:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
 ---
 
@@ -249,6 +258,7 @@ const csv = await exportCsv([result], './output');
 const xlsx = await exportXlsx([result], './output', {
   tableOnly: true,       // padrão: true
   fallbackToRaw: true,   // se não houver tabela, exporta texto bruto
+  format: 'legacy',      // use 'unimed-report' (padrão) para layout Unimed
 });
 ```
 
@@ -303,9 +313,23 @@ Erro: `ExtractionError`
 | `exportXlsx(results, outputDir, options)` | Excel por PDF |
 | `resolveExportRows(results, options)` | Resolve linhas (tabela ou raw) sem gravar arquivo |
 
-**Colunas exportadas (modo tabela):**
+**Layout padrão (`format: 'unimed-report'`)** — planilha formatada para relatórios Unimed:
 
-`source_pdf`, `guia`, `dt_emis`, `beneficiario`, `id_beneficiario`, `pl`, `medico`, `requisicao`, `codigo_procedimento`, `procedimento`, `qt`
+| Linha | Conteúdo |
+|-------|----------|
+| 1 | Nome do prestador (extraído do PDF) |
+| 2 | `UNIMED - 1º PGTO PROGRAMADO PARA {data}` + intervalo de produção |
+| 3 | Cabeçalho com 12 colunas |
+| 4+ | Dados ordenados por Executante → Beneficiário |
+| após cada Executante | `TOTAL - {NOME}` com somatório de Qt |
+| final | `TOTAL GERAL` |
+| após a tabela | **RESUMO GERAL** — blocos por Executante com `VR.SESSÕES`, `QUANT.` e `TOTAL` por valor de sessão, subtotal do Executante e `TOTAL GERAL` consolidado |
+
+Colunas: `Requisição`, `Protocolo`, `Guia`, `Beneficiário`, `Atendimento`, `Executante`, `Serviço`, `Qt`, `Item`, `Vl Bruto`, `Vl Glosa`, `Vl Pago`.
+
+A data de pagamento é calculada como **dia 5 do mês seguinte** ao fim da `Dt pesquisa` do PDF. Valores monetários (`Item`, `Vl Bruto`, `Vl Glosa`, `Vl Pago`) usam placeholders nesta fase (`-` / `0,00 R$`).
+
+Use `format: 'legacy'` para o formato flat anterior (`source_pdf`, `guia`, `medico`, etc.).
 
 Erro: `ExportError`
 

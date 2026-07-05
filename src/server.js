@@ -1,5 +1,8 @@
 const path = require('path');
+const { loadEnv } = require('./loadEnv');
 const { LlmSummarizerBuilder } = require('./pipeline/LlmSummarizerBuilder');
+
+loadEnv();
 const phase1Api = require('./api');
 
 async function main() {

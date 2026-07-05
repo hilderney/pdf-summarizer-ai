@@ -270,7 +270,10 @@ function createAppRequestHandler(options) {
           const result = await llmProcessService.processRequest(body);
           return sendJson(res, 201, result);
         } catch (error) {
-          return sendJson(res, error.statusCode || 502, { error: error.message });
+          return sendJson(res, error.statusCode || 502, {
+            error: error.message,
+            ...(error.code ? { code: error.code } : {}),
+          });
         }
       }
 
@@ -291,7 +294,10 @@ function createAppRequestHandler(options) {
       return sendJson(res, 404, { error: 'Route not found' });
     } catch (error) {
       const statusCode = error.statusCode || 500;
-      return sendJson(res, statusCode, { error: error.message });
+      return sendJson(res, statusCode, {
+        error: error.message,
+        ...(error.code ? { code: error.code } : {}),
+      });
     }
   };
 }

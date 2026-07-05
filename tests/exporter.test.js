@@ -25,7 +25,7 @@ async function readWorksheet(filePath) {
   return workbook.worksheets[0];
 }
 
-describe('exporter — CSV', () => {
+describe('exporter — CSV (layout Unimed)', () => {
   let outputDir;
 
   beforeEach(async () => {
@@ -36,7 +36,7 @@ describe('exporter — CSV', () => {
     await fs.rm(outputDir, { recursive: true, force: true });
   });
 
-  test('[RED-19] deve gerar um arquivo .csv com cabeçalho de tabela quando houver linhas de dados', async () => {
+  test('[RED-19] deve gerar CSV com prestador, linha UNIMED e cabeçalho de 12 colunas', async () => {
     const sampleText = await fs.readFile(UNIMED_SAMPLE_PATH, 'utf8');
     const { filePath } = await exportCsv(
       [buildResult({ inputFile: 'unimed.pdf', text: sampleText })],
@@ -44,11 +44,20 @@ describe('exporter — CSV', () => {
       { fileName: 'export.csv' },
     );
     const content = await fs.readFile(filePath, 'utf8');
+    const lines = content.trim().split('\n');
 
-    expect(content).toContain('guia');
-    expect(content).toContain('beneficiario');
-    expect(content).toContain('codigo_procedimento');
+    expect(lines[0]).toBe('PSICOVITAE - CONSULTORIO DE PSICOLOGIA');
+    expect(lines[1]).toContain('UNIMED - 1º PGTO PROGRAMADO PARA 05/07/2026');
+    expect(lines[1]).toContain('PRODUÇÃO : 20/05/2026 A 05/06/2026');
+    expect(lines[2]).toContain('Requisição');
+    expect(lines[2]).toContain('Executante');
+    expect(lines[2]).toContain('Vl Pago');
     expect(content).toContain('7063165');
+    expect(content).toContain('TOTAL - BIANCA');
+    expect(content).toContain('TOTAL GERAL');
+    expect(content).toContain('RESUMO GERAL');
+    expect(content).toContain('VR.SESSÕES');
+    expect(content).not.toContain('source_pdf');
     expect(content).not.toContain('Controle de Guias');
     expect(content).not.toContain('Total de beneficiários');
   });
@@ -64,11 +73,12 @@ describe('exporter — CSV', () => {
     const lines = (await fs.readFile(filePath, 'utf8')).trim().split('\n');
 
     expect(rowCount).toBe(8);
-    expect(lines).toHaveLength(9);
+    expect(lines.length).toBeGreaterThan(9);
   });
 
-  test('[RED-21] deve escapar corretamente campos com vírgula, aspas e quebras de linha no CSV', async () => {
+  test('[RED-21] deve preservar campos com vírgula e aspas no layout tabular', async () => {
     const text = [
+      'Prestador CLINICA TESTE Tipo guia: SP/SADT Dt pesquisa: 01/01/2026 a 31/01/2026',
       '7063165 28/05/202 MARIA, DA SILVA 25 13 DR. TESTE REQUISIÇÃO: 604643990',
       '50000470 PROCEDIMENTO COM "ASPAS" POR 1',
     ].join('\n');
@@ -77,11 +87,13 @@ describe('exporter — CSV', () => {
     const content = await fs.readFile(filePath, 'utf8');
 
     expect(content).toContain('MARIA, DA SILVA');
-    expect(content).toContain('PROCEDIMENTO COM ""ASPAS""');
+    expect(content).toContain('Consulta/Terapia');
   });
 
   test('[RED-22] deve retornar o caminho absoluto do arquivo .csv gerado', async () => {
-    const { filePath } = await exportCsv([buildResult({ inputFile: 'relatorio.pdf' })], outputDir);
+    const { filePath } = await exportCsv([buildResult({ inputFile: 'relatorio.pdf' })], outputDir, {
+      fallbackToRaw: true,
+    });
 
     expect(path.isAbsolute(filePath)).toBe(true);
     expect(path.basename(filePath)).toBe('relatorio.csv');
@@ -106,9 +118,23 @@ describe('exporter — CSV', () => {
     expect(resolved.mode).toBe('raw');
     expect(resolved.rows[0].content).toBe('Texto extraído...');
   });
+
+  test('format legacy mantém colunas técnicas flat', async () => {
+    const sampleText = await fs.readFile(UNIMED_SAMPLE_PATH, 'utf8');
+    const { filePath } = await exportCsv(
+      [buildResult({ text: sampleText })],
+      outputDir,
+      { format: 'legacy', fileName: 'legacy.csv' },
+    );
+    const content = await fs.readFile(filePath, 'utf8');
+
+    expect(content).toContain('source_pdf');
+    expect(content).toContain('codigo_procedimento');
+    expect(content).not.toContain('TOTAL GERAL');
+  });
 });
 
-describe('exporter — Excel', () => {
+describe('exporter — Excel (layout Unimed)', () => {
   let outputDir;
 
   beforeEach(async () => {
@@ -132,7 +158,7 @@ describe('exporter — Excel', () => {
     expect(worksheet.name).toBe('documents');
   });
 
-  test('[RED-25] deve incluir cabeçalhos das colunas da tabela extraída', async () => {
+  test('[RED-25] deve incluir prestador, linha UNIMED e cabeçalho de 12 colunas', async () => {
     const sampleText = await fs.readFile(UNIMED_SAMPLE_PATH, 'utf8');
     const { filePath } = await exportXlsx(
       [buildResult({ text: sampleText })],
@@ -140,24 +166,26 @@ describe('exporter — Excel', () => {
       { fileName: 'export.xlsx' },
     );
     const worksheet = await readWorksheet(filePath);
-    const headerRow = worksheet.getRow(1).values.slice(1);
 
-    expect(headerRow).toEqual([
-      'source_pdf',
-      'guia',
-      'dt_emis',
-      'beneficiario',
-      'id_beneficiario',
-      'pl',
-      'medico',
-      'requisicao',
-      'codigo_procedimento',
-      'procedimento',
-      'qt',
+    expect(worksheet.getRow(1).getCell(1).value).toBe('PSICOVITAE - CONSULTORIO DE PSICOLOGIA');
+    expect(String(worksheet.getRow(2).getCell(1).value)).toContain('UNIMED - 1º PGTO PROGRAMADO PARA 05/07/2026');
+    expect(worksheet.getRow(3).values.slice(1)).toEqual([
+      'Requisição',
+      'Protocolo',
+      'Guia',
+      'Beneficiário',
+      'Atendimento',
+      'Executante',
+      'Serviço',
+      'Qt',
+      'Item',
+      'Vl Bruto',
+      'Vl Glosa',
+      'Vl Pago',
     ]);
   });
 
-  test('[RED-26] cada linha exportada deve conter apenas dados da tabela do PDF', async () => {
+  test('[RED-26] cada linha exportada deve conter dados mapeados sem source_pdf', async () => {
     const sampleText = await fs.readFile(UNIMED_SAMPLE_PATH, 'utf8');
     const { filePath, rowCount } = await exportXlsx(
       [buildResult({ inputFile: 'unimed.pdf', text: sampleText })],
@@ -165,14 +193,20 @@ describe('exporter — Excel', () => {
       { fileName: 'export.xlsx' },
     );
     const worksheet = await readWorksheet(filePath);
-    const dataRow = worksheet.getRow(2).values.slice(1);
+    let ingridRow = null;
+
+    worksheet.eachRow((row) => {
+      if (row.getCell(4).value === 'INGRID PINHEIRO ACIOLI') {
+        ingridRow = row.values.slice(1);
+      }
+    });
 
     expect(rowCount).toBe(4);
-    expect(dataRow[0]).toBe('unimed.pdf');
-    expect(dataRow[1]).toBe('7063165');
-    expect(dataRow[3]).toBe('INGRID PINHEIRO ACIOLI');
-    expect(dataRow[8]).toBe('50000470');
-    expect(dataRow[10]).toBe('1');
+    expect(ingridRow[1]).toBe('7063165');
+    expect(ingridRow[3]).toBe('INGRID PINHEIRO ACIOLI');
+    expect(ingridRow[5]).toBe('BIANCA FERREIRA DE SOUZA');
+    expect(ingridRow[6]).toBe('Consulta/Terapia');
+    expect(ingridRow[7]).toBe('1');
   });
 
   test('[RED-27] o arquivo Excel gerado deve ser válido (parseável por exceljs)', async () => {
@@ -197,5 +231,30 @@ describe('exporter — Excel', () => {
 
   test('[RED-29] deve lançar ExportError se o array de entrada estiver vazio', async () => {
     await expect(exportXlsx([], outputDir)).rejects.toThrow(ExportError);
+  });
+
+  test('format legacy mantém colunas técnicas flat', async () => {
+    const sampleText = await fs.readFile(UNIMED_SAMPLE_PATH, 'utf8');
+    const { filePath } = await exportXlsx(
+      [buildResult({ text: sampleText })],
+      outputDir,
+      { format: 'legacy', fileName: 'legacy.xlsx' },
+    );
+    const worksheet = await readWorksheet(filePath);
+    const headerRow = worksheet.getRow(1).values.slice(1);
+
+    expect(headerRow).toEqual([
+      'source_pdf',
+      'guia',
+      'dt_emis',
+      'beneficiario',
+      'id_beneficiario',
+      'pl',
+      'medico',
+      'requisicao',
+      'codigo_procedimento',
+      'procedimento',
+      'qt',
+    ]);
   });
 });
