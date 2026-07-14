@@ -21,6 +21,12 @@ class PersistenceError extends AppError {}
 class ValidationError extends AppError {}
 class CryptoError extends AppError {}
 class FileReaderError extends AppError {}
+class SpreadsheetError extends AppError {
+  constructor(message, { code, cause } = {}) {
+    super(message, cause);
+    this.code = code;
+  }
+}
 
 module.exports = {
   AppError,
@@ -33,4 +39,5 @@ module.exports = {
   ValidationError,
   CryptoError,
   FileReaderError,
+  SpreadsheetError,
 };

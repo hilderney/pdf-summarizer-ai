@@ -5,7 +5,9 @@ const { LinkerError } = require('../errors');
 const { isPathInside } = require('../utils/paths');
 const { listOutputFiles, getContentType } = require('./linker');
 const { getRoots, browse } = require('./fsBrowser');
-const { stagePdfFiles } = require('./stagingUpload');
+const { stagePdfFiles, stageInputFiles } = require('./stagingUpload');
+const { processInputFiles } = require('./inputProcessService');
+const { importSpreadsheet, listSpreadsheets } = require('./spreadsheetImporter');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -146,6 +148,7 @@ function createAppRequestHandler(options) {
     llmProcessService,
     logsDir = './logs',
     stagingDir = './staging',
+    inputDir = process.env.INPUT_DIR || './input',
   } = options;
 
   const pipeline = createPipelineController(phase1Api, { outputDir, logsDir });
@@ -189,6 +192,106 @@ function createAppRequestHandler(options) {
       const openMatch = pathname.match(/^\/open\/(.+)$/);
       if (req.method === 'GET' && openMatch) {
         return serveOutputFile(res, outputDir, decodeURIComponent(openMatch[1]));
+      }
+
+      if (pathname === '/api/v1/pipeline/stage' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const staged = await stagePdfFiles(body.files, stagingDir);
+        return sendJson(res, 201, staged);
+      }
+
+      if (pathname === '/api/v1/input/stage' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (!Array.isArray(body.files) || body.files.length === 0) {
+          return sendJson(res, 400, { error: 'files array is required' });
+        }
+        const staged = await stageInputFiles(body.files, stagingDir);
+        return sendJson(res, 201, staged);
+      }
+
+      if (pathname === '/api/v1/input/process' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (!body.inputDir || !Array.isArray(body.files) || body.files.length === 0) {
+          return sendJson(res, 400, { error: 'inputDir and files are required' });
+        }
+
+        for (const fileName of body.files) {
+          if (!isPathInside(body.inputDir, fileName)) {
+            return sendJson(res, 400, { error: 'Invalid file path' });
+          }
+        }
+
+        const summary = await processInputFiles(body.inputDir, body.files, {
+          outputDir: body.outputDir || outputDir,
+          logsDir: body.logsDir || logsDir,
+          phase1Api,
+          baseUrl,
+          overwrite: body.overwrite !== false,
+        });
+        return sendJson(res, 200, summary);
+      }
+
+      if (pathname === '/api/v1/input/run' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (!Array.isArray(body.files) || body.files.length === 0) {
+          return sendJson(res, 400, { error: 'files array is required' });
+        }
+
+        const staged = await stageInputFiles(body.files, stagingDir);
+        const fileNames = body.processNames?.length
+          ? body.processNames.filter((name) => staged.files.some((file) => file.name === name))
+          : staged.files.map((file) => file.name);
+
+        const summary = await processInputFiles(staged.inputDir, fileNames, {
+          outputDir: body.outputDir || outputDir,
+          logsDir: body.logsDir || logsDir,
+          phase1Api,
+          baseUrl,
+          overwrite: body.overwrite !== false,
+        });
+
+        return sendJson(res, 201, {
+          ...summary,
+          staged,
+        });
+      }
+
+      if (pathname === '/api/v1/spreadsheet/scan' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        const targetInputDir = body.inputDir || inputDir;
+        const files = await listSpreadsheets(targetInputDir, {
+          recursive: Boolean(body.recursive),
+        });
+        return sendJson(res, 200, { files });
+      }
+
+      if (pathname === '/api/v1/spreadsheet/import' && req.method === 'POST') {
+        const body = await readJsonBody(req);
+        if (!body.sourceFile) {
+          return sendJson(res, 400, { error: 'sourceFile is required' });
+        }
+
+        const targetInputDir = body.inputDir || inputDir;
+        if (!isPathInside(targetInputDir, body.sourceFile)) {
+          return sendJson(res, 400, { error: 'Invalid file path' });
+        }
+
+        try {
+          const result = await importSpreadsheet(body.sourceFile, {
+            inputDir: targetInputDir,
+            outputDir: body.outputDir || outputDir,
+            formats: body.formats || ['csv', 'xlsx'],
+            overwrite: body.overwrite !== false,
+            logsDir: body.logsDir || logsDir,
+            baseUrl,
+          });
+          return sendJson(res, 201, result);
+        } catch (error) {
+          if (error.code === 'NOT_FOUND' || error.cause?.code === 'ENOENT') {
+            return sendJson(res, 404, { error: error.message });
+          }
+          throw error;
+        }
       }
 
       if (pathname.startsWith('/api/v1/pipeline/') && req.method === 'POST') {
@@ -310,6 +413,7 @@ async function createAppServer(options = {}) {
     staticDir = './public',
     logsDir = './logs',
     stagingDir = './staging',
+    inputDir = process.env.INPUT_DIR || './input',
     phase1Api,
     llmModelService,
     llmProcessService,
@@ -330,6 +434,7 @@ async function createAppServer(options = {}) {
     llmProcessService,
     logsDir,
     stagingDir,
+    inputDir,
   });
 
   const server = httpImpl.createServer((req, res) => {

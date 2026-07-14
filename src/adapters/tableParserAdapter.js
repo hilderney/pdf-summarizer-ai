@@ -1,3 +1,8 @@
+const { SpreadsheetError } = require('../errors');
+const {
+  REQUIRED_HEADER_KEYS,
+} = require('./spreadsheetReaderAdapter');
+
 const SKIP_LINE_PATTERNS = [
   /^Controle de Guias$/i,
   /^Guia\s+Dt\s+Emis/i,
@@ -115,6 +120,60 @@ class UnimedGuiaTableParser extends TableParserAdapter {
   }
 }
 
+class UnimedPlanilhaTableParser extends TableParserAdapter {
+  parseSpreadsheet(data) {
+    const headers = data?.headers || [];
+    const sourceRows = data?.rows || [];
+    const skippedLines = [];
+    const rows = [];
+
+    const missing = [...REQUIRED_HEADER_KEYS].filter((key) => !headers.includes(key));
+    if (missing.length > 0) {
+      throw new SpreadsheetError(`Missing required columns: ${missing.join(', ')}`, {
+        code: 'MISSING_COLUMNS',
+      });
+    }
+
+    for (const sourceRow of sourceRows) {
+      const requisicao = String(sourceRow.requisicao || '').trim();
+      const executante = String(sourceRow.executante || '').trim();
+
+      if (!requisicao || !executante) {
+        skippedLines.push(JSON.stringify(sourceRow));
+        continue;
+      }
+
+      rows.push({
+        requisicao,
+        protocolo: String(sourceRow.protocolo || '').trim(),
+        guia: String(sourceRow.guia || '').trim(),
+        beneficiario: String(sourceRow.beneficiario || '').trim(),
+        dt_emis: String(sourceRow.atendimento || '').trim(),
+        medico: executante,
+        codigo_procedimento: String(sourceRow.evento || '').trim(),
+        procedimento: String(sourceRow.descricao || '').trim(),
+        qt: String(sourceRow.qt_item || sourceRow.qt || '').trim(),
+        item: String(sourceRow.vl_bruto || '').trim(),
+        vl_bruto: String(sourceRow.vl_bruto || '').trim(),
+        vl_glosa: String(sourceRow.vl_glosa ?? '').trim(),
+        vl_pago: String(sourceRow.vl_pago || '').trim(),
+      });
+    }
+
+    return {
+      rows,
+      skippedLines,
+      parser: 'unimed-planilha',
+    };
+  }
+
+  parse(_text) {
+    throw new SpreadsheetError('unimed-planilha parser requires parseSpreadsheet(data)', {
+      code: 'UNSUPPORTED_FORMAT',
+    });
+  }
+}
+
 class GenericTableParser extends TableParserAdapter {
   parse(text) {
     const lines = String(text || '')
@@ -161,6 +220,8 @@ class GenericTableParser extends TableParserAdapter {
 
 function createTableParserAdapter(type = 'auto') {
   switch (type) {
+    case 'unimed-planilha':
+      return new UnimedPlanilhaTableParser();
     case 'unimed-guia':
       return new UnimedGuiaTableParser();
     case 'generic':
@@ -186,6 +247,7 @@ function createTableParserAdapter(type = 'auto') {
 module.exports = {
   TableParserAdapter,
   UnimedGuiaTableParser,
+  UnimedPlanilhaTableParser,
   GenericTableParser,
   createTableParserAdapter,
   shouldSkipLine,

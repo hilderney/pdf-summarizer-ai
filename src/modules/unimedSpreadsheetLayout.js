@@ -1,6 +1,6 @@
 const { parseUnimedMetadata } = require('./unimedMetadataParser');
 const { buildResumoGeralSheetRows } = require('./unimedResumoGeral');
-const { parseBrazilianMoney } = require('./unimedMoney');
+const { parseBrazilianMoney, formatBrazilianMoney } = require('./unimedMoney');
 
 const UNIMED_REPORT_HEADERS = [
   'Requisição',
@@ -55,27 +55,49 @@ function resolveMoneyField(row, ...fields) {
   return null;
 }
 
+function formatMoneyOutput(value) {
+  if (value == null || value === '' || value === '-') {
+    return null;
+  }
+
+  if (String(value).includes('R$')) {
+    return value;
+  }
+
+  const amount = parseBrazilianMoney(value);
+  if (amount <= 0) {
+    return null;
+  }
+
+  return formatBrazilianMoney(amount, { emptyAsDash: false });
+}
+
 function normalizeRow(row) {
   const item = resolveMoneyField(row, 'item');
   const vlPago = resolveMoneyField(row, 'vlPago', 'vl_pago');
   const vlBruto = resolveMoneyField(row, 'vlBruto', 'vl_bruto');
+  const vlGlosaRaw = resolveMoneyField(row, 'vlGlosa', 'vl_glosa');
 
-  const hasItem = item && parseBrazilianMoney(item) > 0;
-  const hasPago = vlPago && parseBrazilianMoney(vlPago) > 0;
+  const itemFormatted = formatMoneyOutput(item || vlBruto);
+  const brutoFormatted = formatMoneyOutput(vlBruto || item);
+  const pagoFormatted = formatMoneyOutput(vlPago);
+  const glosaAmount = parseBrazilianMoney(vlGlosaRaw);
+
+  const hasPlanilhaShape = Boolean(row.protocolo);
 
   return {
     requisicao: row.requisicao || '',
-    protocolo: row.guia || '',
-    guia: row.pl || '',
+    protocolo: hasPlanilhaShape ? row.protocolo || '' : row.guia || '',
+    guia: hasPlanilhaShape ? row.guia || '' : row.pl || '',
     beneficiario: row.beneficiario || '',
     atendimento: row.dt_emis || '',
-    executante: row.medico || '',
+    executante: row.medico || row.executante || '',
     servico: mapServiceLabel(row),
     qt: Number.parseInt(row.qt, 10) || 0,
-    item: hasItem ? item : PLACEHOLDER_ITEM,
-    vlBruto: vlBruto && parseBrazilianMoney(vlBruto) > 0 ? vlBruto : PLACEHOLDER_BRUTO,
-    vlGlosa: PLACEHOLDER_GLOSA,
-    vlPago: hasPago ? vlPago : PLACEHOLDER_PAGO,
+    item: itemFormatted || PLACEHOLDER_ITEM,
+    vlBruto: brutoFormatted || PLACEHOLDER_BRUTO,
+    vlGlosa: glosaAmount > 0 ? formatBrazilianMoney(glosaAmount, { emptyAsDash: false }) : PLACEHOLDER_GLOSA,
+    vlPago: pagoFormatted || PLACEHOLDER_PAGO,
   };
 }
 
@@ -190,14 +212,14 @@ function buildGrandTotalRows(normalizedRows) {
   };
 }
 
-function buildUnimedSpreadsheet({ text, rows }) {
-  const metadata = parseUnimedMetadata(text);
+function buildUnimedSpreadsheet({ text, rows, metadata }) {
+  const resolvedMetadata = metadata ?? parseUnimedMetadata(text);
   const normalizedRows = sortRows(rows.map(normalizeRow));
   const dataAndSubtotals = buildGroupedSheetRows(normalizedRows);
 
   const sheetRows = [
-    { type: 'preamble', cells: [metadata.prestador] },
-    { type: 'preamble', cells: [metadata.paymentLine] },
+    { type: 'preamble', cells: [resolvedMetadata.prestador] },
+    { type: 'preamble', cells: [resolvedMetadata.paymentLine] },
     { type: 'header', cells: [...UNIMED_REPORT_HEADERS] },
     ...dataAndSubtotals,
   ];
@@ -210,7 +232,7 @@ function buildUnimedSpreadsheet({ text, rows }) {
   return {
     sheetRows,
     columnCount: COLUMN_COUNT,
-    metadata,
+    metadata: resolvedMetadata,
     dataRowCount: normalizedRows.length,
   };
 }

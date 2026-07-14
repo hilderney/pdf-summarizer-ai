@@ -9,44 +9,57 @@
 <body>
   <header>
     <h1>PDF Summarizer AI</h1>
-    <p class="subtitle">Fase 2 — Pipeline + LLM</p>
+    <p class="subtitle">PDFs e planilhas Unimed — processamento local</p>
   </header>
 
   <nav class="tabs">
-    <button class="tab active" data-tab="pipeline">Pipeline</button>
+    <button class="tab active" data-tab="files">Arquivos</button>
     <button class="tab" data-tab="models">Modelos LLM</button>
-    <button class="tab" data-tab="process">Processar</button>
+    <button class="tab" data-tab="process">Processar LLM</button>
   </nav>
 
   <main>
-    <section id="tab-pipeline" class="panel active">
-      <h2>Pipeline (Fase 1)</h2>
-      <div class="path-picker card">
-        <label for="pipeline-input-dir">Pasta com PDFs</label>
-        <div class="path-row">
-          <input type="text" id="pipeline-input-dir" readonly placeholder="Nenhuma pasta selecionada">
-          <button type="button" id="btn-browse-folder">Escolher pasta...</button>
-          <button type="button" id="btn-pick-pdfs" class="btn-secondary">Abrir PDFs...</button>
-          <button type="button" id="btn-pick-folder-upload" class="btn-secondary">Enviar pasta...</button>
-        </div>
-        <p id="pipeline-selection-info" class="hint">Navegue pelas pastas do servidor, arraste PDFs ou use o seletor nativo.</p>
-      </div>
-      <div id="pdf-drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Arraste PDFs aqui ou clique para selecionar">
+    <section id="tab-files" class="panel active">
+      <h2>Entrada de arquivos</h2>
+      <p class="hint intro-hint">
+        Selecione ou arraste apenas os arquivos desejados. Formatos aceitos: <strong>.pdf</strong>, <strong>.xlsx</strong> e <strong>.xls</strong>.
+      </p>
+
+      <div id="file-drop-zone" class="drop-zone" tabindex="0" role="button" aria-label="Arraste PDFs e planilhas aqui ou clique para selecionar">
         <div class="drop-zone-content">
-          <span class="drop-zone-icon" aria-hidden="true">📄</span>
-          <p class="drop-zone-title">Arraste PDFs aqui</p>
-          <p class="drop-zone-subtitle">Solte um ou vários arquivos .pdf — ou clique para abrir o seletor</p>
+          <span class="drop-zone-icon" aria-hidden="true">📂</span>
+          <p class="drop-zone-title">Arraste arquivos aqui</p>
+          <p class="drop-zone-subtitle">PDFs e planilhas (.pdf, .xlsx, .xls) — ou clique para escolher</p>
         </div>
       </div>
-      <input type="file" id="pdf-file-input" accept=".pdf,application/pdf" multiple hidden>
-      <input type="file" id="pdf-folder-input" webkitdirectory directory multiple hidden>
+      <input type="file" id="file-input" accept=".pdf,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/octet-stream" multiple hidden>
+
       <div class="actions">
-        <button id="btn-scan">Escanear</button>
-        <button id="btn-run">Executar tudo</button>
+        <button type="button" id="btn-pick-files">Selecionar arquivos...</button>
+        <button type="button" id="btn-clear-files" class="btn-secondary">Limpar</button>
+        <button type="button" id="btn-process-selected">Processar selecionados</button>
       </div>
-      <pre id="pipeline-log" class="log"></pre>
+
+      <p id="selection-summary" class="hint">Nenhum arquivo selecionado. Arraste arquivos ou use o botão abaixo.</p>
+
+      <table id="selected-files-table" class="selected-files-table">
+        <thead>
+          <tr>
+            <th class="col-check"><input type="checkbox" id="select-all-files" checked aria-label="Selecionar todos"></th>
+            <th>Arquivo</th>
+            <th>Tipo</th>
+            <th>Tamanho</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <div id="process-metadata" class="card summary"></div>
+      <pre id="files-log" class="log"></pre>
+
       <h3>Arquivos gerados</h3>
-      <table id="files-table">
+      <table id="output-files-table">
         <thead>
           <tr><th>Nome</th><th>Ações</th></tr>
         </thead>
@@ -102,33 +115,9 @@
     </section>
   </main>
 
-  <div id="folder-picker-modal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-close-modal></div>
-    <div class="modal-dialog" role="dialog" aria-labelledby="folder-picker-title">
-      <header class="modal-header">
-        <h3 id="folder-picker-title">Selecionar pasta com PDFs</h3>
-        <button type="button" class="modal-close" data-close-modal aria-label="Fechar">&times;</button>
-      </header>
-      <div class="modal-toolbar">
-        <button type="button" id="picker-btn-up" class="btn-secondary">&#8593; Acima</button>
-        <button type="button" id="picker-btn-roots" class="btn-secondary">Locais</button>
-      </div>
-      <div id="picker-breadcrumb" class="breadcrumb"></div>
-      <div id="picker-roots" class="picker-roots hidden"></div>
-      <ul id="picker-list" class="picker-list"></ul>
-      <footer class="modal-footer">
-        <span id="picker-status" class="hint"></span>
-        <div class="modal-actions">
-          <button type="button" class="btn-secondary" data-close-modal>Cancelar</button>
-          <button type="button" id="picker-btn-select">Selecionar esta pasta</button>
-        </div>
-      </footer>
-    </div>
-  </div>
-
   <script src="/js/api-client.js"></script>
-  <script src="/js/folder-picker.js"></script>
-  <script src="/js/pipeline-ui.js"></script>
+  <script src="/js/file-input-utils.js"></script>
+  <script src="/js/input-ui.js"></script>
   <script src="/js/llm-ui.js"></script>
   <script src="/js/app.js"></script>
 </body>

@@ -246,7 +246,7 @@ function initLlmUi() {
       summaryEl.textContent = result.summary || '(sem resumo)';
       linkEl.href = result.responseUrl;
       linkEl.textContent = result.responseUrl ? 'Abrir resposta JSON' : '';
-      await refreshFilesTable();
+      await refreshOutputFilesTable();
     } catch (error) {
       summaryEl.textContent = describeProcessError(error);
       summaryEl.className = 'summary card error';

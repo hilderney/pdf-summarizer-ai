@@ -7,5 +7,5 @@ document.querySelectorAll('.tab').forEach((tab) => {
   });
 });
 
-initPipelineUi();
+initInputUi();
 initLlmUi();

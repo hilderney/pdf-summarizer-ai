@@ -17,7 +17,21 @@ FASE 2
 2.5 - Receber resposta em formato .json da LLM, criar link para a resposta json.
 2.6 - Mostrar um resumo do que a LLM respondeu
 
-FASE 3
+FASE 3 (Fluxo de entrada xlsx)
+3.1 - Deixar o sistema ler tipos de arquivos de planilhas .xlsx
+3.2 - Esse arquivo não deve ter um resumo em texto mas sim se adequar ao padrão de saída (csv e xlsx) já existentes.
+3.3 - Nesse arquivo vem os valores para serem usados nas contabilidaddes do padrão de saída.
+3.4 - O sistema de entrada reconhece qual o arquivo (pdf ou xlsx) e segue o fluxo de cada um (pdfs geram arquivos com sufixo _pdf e xlsx com sufixo _xlsx)
+3.4.1 - A pipe do PDF gera um txt, pega a planilha do txt, e gera um csv e um xlsx.
+3.4.2 - A pipe do XLSX pega a planilha do próprio XLSX, e gera um csv e um xlsx.
+3.4.3 - As planilhas geradas (CSV e XLSX) geram uma extrutura cabeçalho, conteúdo (colunas e conteudos), e rodapé com resumo, cada um de acordo com sua capacidade.
+3.4.4 - Dados da Clinica
+3.4.5 - O conteúdo sempre será listado por grupos de executante em ordem alfabética, seguidos de um resumo de cada executante.
+3.4.6 - Cada grupo de executante será ordenado por nome de beneficiário
+3.4.7 - Cada grupo terá um resumo no rodapé do arquivo com agrupamento por grupos de valores.
+
+
+FASE 4
 3.1 - Criar um executável que instale o programa para windows
 3.2 - O instalador deve ser um unico arquivo, tipo um standalone app (.exe ou igual)
  

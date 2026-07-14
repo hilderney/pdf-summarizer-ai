@@ -104,4 +104,90 @@ describe('unimedSpreadsheetLayout', () => {
     expect(data.cells[3]).toBe('INGRID PINHEIRO ACIOLI');
     expect(data.cells[5]).toBe('BIANCA FERREIRA DE SOUZA');
   });
+
+  test('[F3-43] deve usar metadata.prestador quando passada, ignorando parseUnimedMetadata(text)', () => {
+    const { sheetRows, metadata } = buildUnimedSpreadsheet({
+      text: '',
+      rows: sampleRows(),
+      metadata: {
+        prestador: 'PRESTADOR INJETADO',
+        paymentLine: 'LINHA INJETADA',
+      },
+    });
+
+    expect(metadata.prestador).toBe('PRESTADOR INJETADO');
+    expect(sheetRows[0].cells[0]).toBe('PRESTADOR INJETADO');
+  });
+
+  test('[F3-44] deve usar metadata.paymentLine no preamble linha 2', () => {
+    const { sheetRows } = buildUnimedSpreadsheet({
+      text: '',
+      rows: sampleRows(),
+      metadata: {
+        prestador: 'PRESTADOR',
+        paymentLine: 'PAGAMENTO INJETADO',
+      },
+    });
+
+    expect(sheetRows[1].cells[0]).toBe('PAGAMENTO INJETADO');
+  });
+
+  test('[F3-45] fallback: sem metadata, continua usando parseUnimedMetadata(text) (regressão Fase 1)', () => {
+    const { sheetRows } = buildUnimedSpreadsheet({ text: SAMPLE_HEADER, rows: sampleRows() });
+    expect(sheetRows[0].cells[0]).toBe('PSICOVITAE - CONSULTORIO DE PSICOLOGIA');
+  });
+
+  test('[F3-46] deve formatar vl_glosa=0 como -', () => {
+    const normalized = normalizeRow({
+      protocolo: '1',
+      guia: '2',
+      requisicao: '3',
+      beneficiario: 'A',
+      dt_emis: '01/01/2026',
+      medico: 'MED',
+      codigo_procedimento: '50000470',
+      qt: '1',
+      item: '45,54',
+      vl_bruto: '45,54',
+      vl_glosa: '0',
+      vl_pago: '45,54',
+    });
+    expect(normalized.vlGlosa).toBe('-');
+  });
+
+  test('[F3-47] deve formatar vl_glosa=10,50 como 10,50 R$', () => {
+    const normalized = normalizeRow({
+      protocolo: '1',
+      guia: '2',
+      requisicao: '3',
+      beneficiario: 'A',
+      dt_emis: '01/01/2026',
+      medico: 'MED',
+      codigo_procedimento: '50000470',
+      qt: '1',
+      item: '40,42',
+      vl_bruto: '40,42',
+      vl_glosa: '10,50',
+      vl_pago: '29,92',
+    });
+    expect(normalized.vlGlosa).toBe('10,50 R$');
+  });
+
+  test('[F3-48] deve usar item de Vl Bruto quando > 0 para RESUMO GERAL', () => {
+    const normalized = normalizeRow({
+      protocolo: '1',
+      guia: '2',
+      requisicao: '3',
+      beneficiario: 'A',
+      dt_emis: '01/01/2026',
+      medico: 'MED',
+      codigo_procedimento: '50000470',
+      qt: '1',
+      item: '45,54',
+      vl_bruto: '45,54',
+      vl_glosa: '0',
+      vl_pago: '45,54',
+    });
+    expect(normalized.item).toBe('45,54 R$');
+  });
 });

@@ -46,6 +46,28 @@ const api = {
     return this.request('/api/v1/pipeline/stage', { method: 'POST' }, { files });
   },
 
+  inputStage(files) {
+    return this.request('/api/v1/input/stage', { method: 'POST' }, { files });
+  },
+
+  inputProcess(inputDir, files, outputDir) {
+    return this.request('/api/v1/input/process', { method: 'POST' }, {
+      inputDir,
+      files,
+      outputDir,
+      overwrite: true,
+    });
+  },
+
+  inputRun(files, processNames = null) {
+    return this.request('/api/v1/input/run', { method: 'POST' }, {
+      files,
+      processNames,
+      overwrite: true,
+      formats: ['csv', 'xlsx'],
+    });
+  },
+
   pipelineScan(inputDir, recursive = false) {
     return this.request('/api/v1/pipeline/scan', { method: 'POST' }, { inputDir, recursive });
   },
@@ -54,6 +76,19 @@ const api = {
     return this.request('/api/v1/pipeline/run', { method: 'POST' }, {
       inputDir,
       outputDir,
+      overwrite: true,
+      formats: ['csv', 'xlsx'],
+    });
+  },
+
+  spreadsheetScan(inputDir, recursive = false) {
+    return this.request('/api/v1/spreadsheet/scan', { method: 'POST' }, { inputDir, recursive });
+  },
+
+  spreadsheetImport(sourceFile, inputDir) {
+    return this.request('/api/v1/spreadsheet/import', { method: 'POST' }, {
+      sourceFile,
+      inputDir,
       overwrite: true,
       formats: ['csv', 'xlsx'],
     });
