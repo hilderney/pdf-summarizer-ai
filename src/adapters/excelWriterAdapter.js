@@ -8,68 +8,56 @@ const {
 } = require('../modules/unimedResumoGeral');
 const { parseBrazilianMoney } = require('../modules/unimedMoney');
 
+const WORKBOOK_CREATOR = 'pdf-summarizer-ai';
+const DEFAULT_SHEET_NAME = 'documents';
+
+const BRL_NUM_FMT = '"R$"#,##0.00';
+const DASH_PLACEHOLDER = '-';
+
+const QT_COL = 8;
+const MONEY_COLS = [9, 10, 11];
+
+const RESUMO_NAME_COL = RESUMO_LEFT_COLSPAN + 1;
+const RESUMO_DATA_COL = RESUMO_NAME_COL + RESUMO_NAME_COLSPAN;
+const RESUMO_QUANTITY_COL = RESUMO_DATA_COL + 1;
+const RESUMO_TOTAL_COL = RESUMO_DATA_COL + 2;
+
+const PREAMBLE_FONT_SIZE = { header1: 16, header3: 12 };
+const RESUMO_BLOCK_COLORS = ['FFBDD7EE', 'FFFCE4D6', 'FFE2EFDA', 'FFF2F2F2'];
+const RESUMO_GRAND_COLOR_INDEX = 3;
+
+const FROZEN_HEADER_ROWS = 3;
+const COLUMN_WIDTHS = [14, 12, 12, 28, 14, 28, 16, 8, 14, 12, 14];
+
 class ExcelWriterAdapter {
   async write(_filePath, _rows, _headers) {
     throw new Error('ExcelWriterAdapter.write() must be implemented');
   }
 }
 
-const RESUMO_COLORS = {
-  executante: ['FFBDD7EE', 'FFFCE4D6', 'FFE2EFDA', 'FFF2F2F2'],
-  grandTotal: 'FFFFFFFF',
-};
-
-const BRL_NUM_FMT = '"R$"#,##0.00';
-const MONEY_COLS = [9, 10, 11];
-const QT_COL = 8;
-
-const RESUMO_NAME_COL = RESUMO_LEFT_COLSPAN + 1;
-const RESUMO_DATA_COL = RESUMO_NAME_COL + RESUMO_NAME_COLSPAN;
-
-function applyResumoBlockStyle(cell, colorIndex) {
-  cell.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: RESUMO_COLORS.executante[colorIndex % RESUMO_COLORS.executante.length] },
-  };
-  cell.font = { bold: true };
-  cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-}
-
 function emptyCells(count) {
   return new Array(count).fill('');
 }
 
-function buildResumoRow(nameValue, dataValues = []) {
-  const cells = emptyCells(COLUMN_COUNT);
-  if (nameValue != null) {
-    cells[RESUMO_NAME_COL - 1] = nameValue;
-  }
-  for (let index = 0; index < dataValues.length; index += 1) {
-    cells[RESUMO_DATA_COL - 1 + index] = dataValues[index];
-  }
-  return cells;
+function isBlankValue(value) {
+  return value === null || value === undefined || value === '';
 }
 
 function setCurrencyCell(cell, rawValue) {
-  if (rawValue === null || rawValue === undefined || rawValue === '' || rawValue === '-') {
-    cell.value = rawValue === '-' ? '-' : null;
+  if (isBlankValue(rawValue) || rawValue === DASH_PLACEHOLDER) {
+    cell.value = rawValue === DASH_PLACEHOLDER ? DASH_PLACEHOLDER : null;
     return;
   }
 
-  if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
-    cell.value = rawValue;
-    cell.numFmt = BRL_NUM_FMT;
-    return;
-  }
-
-  const amount = parseBrazilianMoney(rawValue);
-  cell.value = amount;
+  cell.value =
+    typeof rawValue === 'number' && Number.isFinite(rawValue)
+      ? rawValue
+      : parseBrazilianMoney(rawValue);
   cell.numFmt = BRL_NUM_FMT;
 }
 
 function setIntegerCell(cell, rawValue) {
-  if (rawValue === null || rawValue === undefined || rawValue === '') {
+  if (isBlankValue(rawValue)) {
     cell.value = null;
     return;
   }
@@ -78,34 +66,218 @@ function setIntegerCell(cell, rawValue) {
   cell.value = Number.isFinite(parsed) ? parsed : rawValue;
 }
 
-function applyDataMoneyFormats(row) {
-  setIntegerCell(row.getCell(QT_COL), row.getCell(QT_COL).value);
-  for (const col of MONEY_COLS) {
-    setCurrencyCell(row.getCell(col), row.getCell(col).value);
-  }
+function markBold(cell) {
+  cell.font = { bold: true };
 }
 
-function applyResumoMoneyFormats(row, { includeRate = true, includeTotal = true, includeQuantity = true } = {}) {
-  if (includeRate) {
+function markTopBorder(cell) {
+  cell.border = { top: { style: 'medium' } };
+}
+
+/**
+ * Renders the Unimed report layout (preamble, grouped table and RESUMO GERAL)
+ * into a single ExcelJS worksheet. Row-type handling is split into small
+ * methods so the layout rules stay readable and easy to change.
+ */
+class UnimedReportRenderer {
+  constructor(worksheet) {
+    this.worksheet = worksheet;
+    this.rowIndex = 0;
+    this.preambleIndex = 0;
+    this.resumoSectionStart = null;
+    this.resumoSectionEnd = null;
+    this.resumoBlockStartRow = null;
+    this.resumoBlockColorIndex = 0;
+  }
+
+  render(sheetRows) {
+    for (const sheetRow of sheetRows) {
+      this.rowIndex += 1;
+      this.renderRow(sheetRow);
+    }
+
+    this.mergeResumoLabel();
+    this.freezeHeader();
+    this.applyColumnWidths();
+  }
+
+  renderRow(sheetRow) {
+    switch (sheetRow.type) {
+      case 'preamble':
+        return this.renderPreamble(sheetRow);
+      case 'blank':
+        return this.renderBlank();
+      case 'resumo-blank':
+        return this.renderResumoBlank();
+      case 'resumo-executante-start':
+      case 'resumo-grand-start':
+        return this.renderResumoBlockStart(sheetRow);
+      case 'resumo-data':
+        return this.renderResumoData(sheetRow);
+      case 'resumo-subtotal':
+      case 'resumo-grand-total':
+        return this.renderResumoTotal(sheetRow);
+      default:
+        return this.renderTableRow(sheetRow);
+    }
+  }
+
+  addRow(cells) {
+    return this.worksheet.addRow(cells);
+  }
+
+  buildResumoRow(nameValue, dataValues = []) {
+    const cells = emptyCells(COLUMN_COUNT);
+    if (nameValue != null) {
+      cells[RESUMO_NAME_COL - 1] = nameValue;
+    }
+    dataValues.forEach((value, offset) => {
+      cells[RESUMO_DATA_COL - 1 + offset] = value;
+    });
+    return cells;
+  }
+
+  renderPreamble(sheetRow) {
+    const row = this.addRow([sheetRow.cells[0], ...emptyCells(COLUMN_COUNT - 1)]);
+    this.worksheet.mergeCells(this.rowIndex, 1, this.rowIndex, COLUMN_COUNT);
+
+    const style = sheetRow.meta?.style || (this.preambleIndex === 0 ? 'header1' : 'header3');
+    const cell = row.getCell(1);
+    cell.font = { bold: true, size: PREAMBLE_FONT_SIZE[style] ?? PREAMBLE_FONT_SIZE.header3 };
+    cell.alignment = { vertical: 'middle', horizontal: 'left' };
+    this.preambleIndex += 1;
+  }
+
+  renderBlank() {
+    this.addRow(emptyCells(COLUMN_COUNT));
+  }
+
+  renderResumoBlank() {
+    this.openResumoSection();
+    this.addRow(emptyCells(COLUMN_COUNT));
+    this.resumoSectionEnd = this.rowIndex;
+  }
+
+  renderResumoBlockStart(sheetRow) {
+    this.openResumoSection();
+    this.resumoBlockStartRow = this.rowIndex;
+
+    const [nameValue, ...headers] = sheetRow.cells;
+    const row = this.addRow(this.buildResumoRow(nameValue, headers));
+
+    const isGrandTotal = sheetRow.type === 'resumo-grand-start';
+    const colorIndex = isGrandTotal ? RESUMO_GRAND_COLOR_INDEX : this.resumoBlockColorIndex;
+    this.styleResumoBlockLabel(row.getCell(RESUMO_NAME_COL), colorIndex);
+
+    [RESUMO_DATA_COL, RESUMO_QUANTITY_COL, RESUMO_TOTAL_COL].forEach((col) => markBold(row.getCell(col)));
+
+    if (!isGrandTotal) {
+      this.resumoBlockColorIndex += 1;
+    }
+  }
+
+  renderResumoData(sheetRow) {
+    const row = this.addRow(this.buildResumoRow(null, sheetRow.cells));
     setCurrencyCell(row.getCell(RESUMO_DATA_COL), row.getCell(RESUMO_DATA_COL).value);
+    setIntegerCell(row.getCell(RESUMO_QUANTITY_COL), row.getCell(RESUMO_QUANTITY_COL).value);
+    setCurrencyCell(row.getCell(RESUMO_TOTAL_COL), row.getCell(RESUMO_TOTAL_COL).value);
   }
-  if (includeQuantity) {
-    setIntegerCell(row.getCell(RESUMO_DATA_COL + 1), row.getCell(RESUMO_DATA_COL + 1).value);
+
+  renderResumoTotal(sheetRow) {
+    const row = this.addRow(this.buildResumoRow(null, sheetRow.cells));
+    row.font = { bold: true };
+    [RESUMO_DATA_COL, RESUMO_QUANTITY_COL, RESUMO_TOTAL_COL].forEach((col) => markTopBorder(row.getCell(col)));
+
+    setIntegerCell(row.getCell(RESUMO_QUANTITY_COL), row.getCell(RESUMO_QUANTITY_COL).value);
+    setCurrencyCell(row.getCell(RESUMO_TOTAL_COL), row.getCell(RESUMO_TOTAL_COL).value);
+
+    this.closeResumoBlock();
+
+    if (sheetRow.type === 'resumo-grand-total') {
+      this.resumoSectionEnd = this.rowIndex;
+    }
   }
-  if (includeTotal) {
-    setCurrencyCell(row.getCell(RESUMO_DATA_COL + 2), row.getCell(RESUMO_DATA_COL + 2).value);
+
+  renderTableRow(sheetRow) {
+    const row = this.addRow(sheetRow.cells);
+
+    if (sheetRow.type === 'header') {
+      row.font = { bold: true };
+    }
+
+    if (['data', 'subtotal', 'grand-total'].includes(sheetRow.type)) {
+      this.applyTableMoneyFormats(row);
+    }
+
+    if (['subtotal', 'grand-total'].includes(sheetRow.type)) {
+      row.font = { bold: true };
+      const labelColspan = sheetRow.meta?.labelColspan || SUBTOTAL_LABEL_COLSPAN;
+      this.worksheet.mergeCells(this.rowIndex, 1, this.rowIndex, labelColspan);
+    }
+  }
+
+  applyTableMoneyFormats(row) {
+    setIntegerCell(row.getCell(QT_COL), row.getCell(QT_COL).value);
+    for (const col of MONEY_COLS) {
+      setCurrencyCell(row.getCell(col), row.getCell(col).value);
+    }
+  }
+
+  styleResumoBlockLabel(cell, colorIndex) {
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: RESUMO_BLOCK_COLORS[colorIndex % RESUMO_BLOCK_COLORS.length] },
+    };
+    cell.font = { bold: true };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  }
+
+  openResumoSection() {
+    if (!this.resumoSectionStart) {
+      this.resumoSectionStart = this.rowIndex;
+    }
+  }
+
+  closeResumoBlock() {
+    if (!this.resumoBlockStartRow) {
+      return;
+    }
+    this.worksheet.mergeCells(
+      this.resumoBlockStartRow,
+      RESUMO_NAME_COL,
+      this.rowIndex,
+      RESUMO_NAME_COL + RESUMO_NAME_COLSPAN - 1,
+    );
+    this.resumoBlockStartRow = null;
+  }
+
+  mergeResumoLabel() {
+    const { resumoSectionStart, resumoSectionEnd } = this;
+    if (!resumoSectionStart || !resumoSectionEnd || resumoSectionEnd < resumoSectionStart) {
+      return;
+    }
+
+    this.worksheet.mergeCells(resumoSectionStart, 1, resumoSectionEnd, RESUMO_LEFT_COLSPAN);
+    const label = this.worksheet.getCell(resumoSectionStart, 1);
+    label.value = 'RESUMO GERAL';
+    label.font = { bold: true, size: 12 };
+    label.alignment = { vertical: 'middle', horizontal: 'center', textRotation: 90 };
+  }
+
+  freezeHeader() {
+    this.worksheet.views = [{ state: 'frozen', ySplit: FROZEN_HEADER_ROWS, activeCell: 'A4' }];
+  }
+
+  applyColumnWidths() {
+    this.worksheet.columns = COLUMN_WIDTHS.map((width) => ({ width }));
   }
 }
 
 class ExcelJsAdapter extends ExcelWriterAdapter {
   async write(filePath, rows, headers) {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const worksheet = await this.createWorksheet(filePath, DEFAULT_SHEET_NAME);
 
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'pdf-summarizer-ai';
-    workbook.created = new Date();
-
-    const worksheet = workbook.addWorksheet('documents');
     worksheet.columns = headers.map((header) => ({
       header: header.title,
       key: header.id,
@@ -117,145 +289,23 @@ class ExcelJsAdapter extends ExcelWriterAdapter {
     }
 
     worksheet.getRow(1).font = { bold: true };
-    await workbook.xlsx.writeFile(filePath);
+    await worksheet.workbook.xlsx.writeFile(filePath);
   }
 
   async writeSheet(filePath, sheetRows, options = {}) {
+    const worksheet = await this.createWorksheet(filePath, options.sheetName || DEFAULT_SHEET_NAME);
+    new UnimedReportRenderer(worksheet).render(sheetRows);
+    await worksheet.workbook.xlsx.writeFile(filePath);
+  }
+
+  async createWorksheet(filePath, sheetName) {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
 
     const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'pdf-summarizer-ai';
+    workbook.creator = WORKBOOK_CREATOR;
     workbook.created = new Date();
 
-    const worksheet = workbook.addWorksheet(options.sheetName || 'documents');
-    let rowIndex = 0;
-    let resumoSectionStart = null;
-    let resumoSectionEnd = null;
-    let blockStartRow = null;
-    let blockColorIndex = 0;
-    let preambleIndex = 0;
-
-    for (const sheetRow of sheetRows) {
-      rowIndex += 1;
-
-      if (sheetRow.type === 'preamble') {
-        const row = worksheet.addRow([sheetRow.cells[0], ...emptyCells(COLUMN_COUNT - 1)]);
-        worksheet.mergeCells(rowIndex, 1, rowIndex, COLUMN_COUNT);
-        const cell = row.getCell(1);
-        const style = sheetRow.meta?.style || (preambleIndex === 0 ? 'header1' : 'header3');
-        if (style === 'header1') {
-          cell.font = { bold: true, size: 16 };
-        } else {
-          cell.font = { bold: true, size: 12 };
-        }
-        cell.alignment = { vertical: 'middle', horizontal: 'left' };
-        preambleIndex += 1;
-        continue;
-      }
-
-      if (sheetRow.type === 'blank') {
-        worksheet.addRow(emptyCells(COLUMN_COUNT));
-        continue;
-      }
-
-      if (sheetRow.type === 'resumo-blank') {
-        if (!resumoSectionStart) {
-          resumoSectionStart = rowIndex;
-        }
-        worksheet.addRow(emptyCells(COLUMN_COUNT));
-        resumoSectionEnd = rowIndex;
-        continue;
-      }
-
-      if (sheetRow.type === 'resumo-executante-start' || sheetRow.type === 'resumo-grand-start') {
-        if (!resumoSectionStart) {
-          resumoSectionStart = rowIndex;
-        }
-        blockStartRow = rowIndex;
-        const nameValue = sheetRow.cells[0];
-        const headers = sheetRow.cells.slice(1);
-        const row = worksheet.addRow(buildResumoRow(nameValue, headers));
-        const labelCell = row.getCell(RESUMO_NAME_COL);
-        applyResumoBlockStyle(
-          labelCell,
-          sheetRow.type === 'resumo-grand-start' ? 3 : blockColorIndex,
-        );
-        row.getCell(RESUMO_DATA_COL).font = { bold: true };
-        row.getCell(RESUMO_DATA_COL + 1).font = { bold: true };
-        row.getCell(RESUMO_DATA_COL + 2).font = { bold: true };
-        if (sheetRow.type === 'resumo-executante-start') {
-          blockColorIndex += 1;
-        }
-        continue;
-      }
-
-      if (sheetRow.type === 'resumo-data') {
-        const row = worksheet.addRow(buildResumoRow(null, sheetRow.cells));
-        applyResumoMoneyFormats(row);
-        continue;
-      }
-
-      if (sheetRow.type === 'resumo-subtotal' || sheetRow.type === 'resumo-grand-total') {
-        const row = worksheet.addRow(buildResumoRow(null, sheetRow.cells));
-        row.font = { bold: true };
-        row.getCell(RESUMO_DATA_COL).border = { top: { style: 'medium' } };
-        row.getCell(RESUMO_DATA_COL + 1).border = { top: { style: 'medium' } };
-        row.getCell(RESUMO_DATA_COL + 2).border = { top: { style: 'medium' } };
-        applyResumoMoneyFormats(row, { includeRate: false });
-
-        if (blockStartRow) {
-          worksheet.mergeCells(blockStartRow, RESUMO_NAME_COL, rowIndex, RESUMO_NAME_COL + RESUMO_NAME_COLSPAN - 1);
-          blockStartRow = null;
-        }
-
-        if (sheetRow.type === 'resumo-grand-total') {
-          resumoSectionEnd = rowIndex;
-        }
-        continue;
-      }
-
-      const row = worksheet.addRow(sheetRow.cells);
-
-      if (sheetRow.type === 'header') {
-        row.font = { bold: true };
-      }
-
-      if (sheetRow.type === 'data' || sheetRow.type === 'subtotal' || sheetRow.type === 'grand-total') {
-        applyDataMoneyFormats(row);
-      }
-
-      if (sheetRow.type === 'subtotal' || sheetRow.type === 'grand-total') {
-        row.font = { bold: true };
-        const labelColspan = sheetRow.meta?.labelColspan || SUBTOTAL_LABEL_COLSPAN;
-        worksheet.mergeCells(rowIndex, 1, rowIndex, labelColspan);
-      }
-    }
-
-    if (resumoSectionStart && resumoSectionEnd && resumoSectionEnd >= resumoSectionStart) {
-      worksheet.mergeCells(resumoSectionStart, 1, resumoSectionEnd, RESUMO_LEFT_COLSPAN);
-      const resumoLabel = worksheet.getCell(resumoSectionStart, 1);
-      resumoLabel.value = 'RESUMO GERAL';
-      resumoLabel.font = { bold: true, size: 12 };
-      resumoLabel.alignment = { vertical: 'middle', horizontal: 'center', textRotation: 90 };
-    }
-
-    worksheet.views = [{ state: 'frozen', ySplit: 3, activeCell: 'A4' }];
-
-    worksheet.columns = [
-      { width: 14 },
-      { width: 12 },
-      { width: 12 },
-      { width: 28 },
-      { width: 14 },
-      { width: 28 },
-      { width: 16 },
-      { width: 8 },
-      { width: 14 },
-      { width: 12 },
-      { width: 14 },
-    ];
-
-    await workbook.xlsx.writeFile(filePath);
+    return workbook.addWorksheet(sheetName);
   }
 }
 
