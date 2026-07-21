@@ -22,8 +22,9 @@ function rowWithValue(overrides) {
     codigo_procedimento: '50000470',
     procedimento: 'PSICOTERAPIA',
     qt: '1',
-    item: '45,54 R$',
-    vlPago: '45,54 R$',
+    item: '45,54',
+    vl_bruto: '45,54',
+    vlPago: '45,54',
     ...overrides,
   };
 }
@@ -32,22 +33,22 @@ describe('unimedMoney', () => {
   test('parseia e formata valores em reais', () => {
     expect(parseBrazilianMoney('45,54 R$')).toBeCloseTo(45.54);
     expect(parseBrazilianMoney('R$ 1.092,96')).toBeCloseTo(1092.96);
-    expect(formatBrazilianMoney(1092.96)).toBe('1.092,96 R$');
-    expect(formatSessionRate(40.42)).toBe('40,42 R$');
+    expect(formatBrazilianMoney(1092.96)).toBe('R$ 1.092,96');
+    expect(formatSessionRate(40.42)).toBe('R$ 40,42');
     expect(formatBrazilianMoney(0)).toBe('-');
   });
 });
 
 describe('unimedResumoGeral', () => {
-  test('agrupa valores de sessão por Executante', () => {
+  test('agrupa valores de sessão por Executante usando Vl Bruto', () => {
     const rows = [
-      rowWithValue({ qt: '2', item: '45,54 R$', vlPago: '45,54 R$' }),
-      rowWithValue({ qt: '1', item: '40,42 R$', vlPago: '40,42 R$' }),
+      rowWithValue({ qt: '2', vl_bruto: '45,54', vlPago: '45,54' }),
+      rowWithValue({ qt: '1', vl_bruto: '40,42', vlPago: '40,42' }),
       rowWithValue({
         medico: 'VANESSA FERREIRA NASCIMENTO ZAPF',
         qt: '3',
-        item: '40,42 R$',
-        vlPago: '40,42 R$',
+        vl_bruto: '40,42',
+        vlPago: '40,42',
       }),
     ].map(normalizeRow);
 
@@ -56,30 +57,33 @@ describe('unimedResumoGeral', () => {
     expect(executantes).toHaveLength(2);
     expect(executantes[0].shortName).toBe('BIANCA');
     expect(executantes[0].valueRows).toHaveLength(2);
-    expect(executantes[0].valueRows[0].rateLabel).toBe('45,54 R$');
+    expect(executantes[0].valueRows[0].rateLabel).toBe('R$ 45,54');
     expect(executantes[0].valueRows[0].quantity).toBe('2');
-    expect(executantes[0].valueRows[0].totalLabel).toBe('91,08 R$');
+    expect(executantes[0].valueRows[0].totalLabel).toBe('R$ 91,08');
+    expect(executantes[0].valueRows[1].quantity).toBe('1');
+    expect(executantes[1].valueRows[0].quantity).toBe('0');
+    expect(executantes[1].valueRows[1].quantity).toBe('3');
     expect(executantes[0].totalQuantity).toBe(3);
     expect(executantes[1].totalQuantity).toBe(3);
     expect(grandTotal.totalQuantity).toBe(6);
-    expect(grandTotal.totalLabel).toBe('252,76 R$');
+    expect(grandTotal.totalLabel).toBe('R$ 252,76');
   });
 
   test('monta linhas do RESUMO GERAL com blocos por Executante', () => {
     const rows = [
-      rowWithValue({ qt: '1', item: '45,54 R$', vlPago: '45,54 R$' }),
+      rowWithValue({ qt: '1', vl_bruto: '45,54', vlPago: '45,54' }),
       rowWithValue({
         medico: 'VANESSA FERREIRA NASCIMENTO ZAPF',
         qt: '2',
-        item: '40,42 R$',
-        vlPago: '40,42 R$',
+        vl_bruto: '40,42',
+        vlPago: '40,42',
       }),
     ].map(normalizeRow);
 
     const sheetRows = buildResumoGeralSheetRows(rows);
     const content = sheetRows.map((row) => row.cells.join('\t')).join('\n');
 
-    expect(sheetRows.some((row) => row.type === 'resumo-title')).toBe(true);
+    expect(sheetRows[0].type).toBe('resumo-blank');
     expect(content).toContain('RESUMO GERAL');
     expect(content).toContain('B I A N C A');
     expect(content).toContain('V A N E S S A');
@@ -87,7 +91,8 @@ describe('unimedResumoGeral', () => {
     expect(content).toContain('TOTAL - BIANCA');
     expect(content).toContain('TOTAL - VANESSA');
     expect(content).toContain('T O T A L  G E R A L');
-    expect(sheetRows.at(-1).cells[0]).toBe('TOTAL');
+    expect(sheetRows.some((row) => row.type === 'resumo-grand-total')).toBe(true);
+    expect(sheetRows.find((row) => row.type === 'resumo-grand-total').cells[0]).toBe('TOTAL');
   });
 
   test('espaça letras do nome do Executante', () => {
@@ -97,8 +102,8 @@ describe('unimedResumoGeral', () => {
 
   test('agrupa apenas valores que apareceram nos dados', () => {
     const groups = groupRowsBySessionRate([
-      normalizeRow(rowWithValue({ qt: '2', item: '45,54 R$' })),
-      normalizeRow(rowWithValue({ qt: '1', item: '40,42 R$' })),
+      normalizeRow(rowWithValue({ qt: '2', vl_bruto: '45,54' })),
+      normalizeRow(rowWithValue({ qt: '1', vl_bruto: '40,42' })),
     ]);
 
     expect(groups).toHaveLength(2);

@@ -13,17 +13,19 @@ function parseBrazilianMoney(value) {
   return Number.isFinite(amount) ? amount : 0;
 }
 
-function formatBrazilianMoney(amount, { emptyAsDash = true } = {}) {
-  if (!amount || amount <= 0) {
-    return emptyAsDash ? '-' : '0,00 R$';
-  }
-
-  const formatted = amount.toLocaleString('pt-BR', {
+function formatAmount(amount) {
+  return amount.toLocaleString('pt-BR', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
 
-  return `${formatted} R$`;
+function formatBrazilianMoney(amount, { emptyAsDash = true } = {}) {
+  if (!amount || amount <= 0) {
+    return emptyAsDash ? '-' : 'R$ 0,00';
+  }
+
+  return `R$ ${formatAmount(amount)}`;
 }
 
 function formatSessionRate(amount) {
@@ -31,12 +33,7 @@ function formatSessionRate(amount) {
     return '-';
   }
 
-  const formatted = amount.toLocaleString('pt-BR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
-
-  return `${formatted} R$`;
+  return `R$ ${formatAmount(amount)}`;
 }
 
 module.exports = {

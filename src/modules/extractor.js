@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { ExtractionError } = require('../errors');
-const { sanitizeBaseName } = require('../utils/paths');
+const { buildOutputBaseName } = require('../utils/paths');
 const { createPdfParserAdapter } = require('../adapters/pdfParserAdapter');
 
 async function extractText(pdfPath, outputDir, options = {}) {
@@ -16,7 +16,7 @@ async function extractText(pdfPath, outputDir, options = {}) {
   const inputFile = path.basename(absolutePdfPath);
   const outputFile = path.join(
     absoluteOutputDir,
-    `${sanitizeBaseName(inputFile)}.txt`,
+    `${buildOutputBaseName(inputFile, 'pdf')}.txt`,
   );
 
   await fsImpl.mkdir(absoluteOutputDir, { recursive: true });

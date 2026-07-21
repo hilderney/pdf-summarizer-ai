@@ -7,7 +7,7 @@ const {
   createTableParserAdapter,
   TABLE_EXPORT_HEADERS,
 } = require('../adapters/tableParserAdapter');
-const { sanitizeBaseName } = require('../utils/paths');
+const { buildOutputBaseName } = require('../utils/paths');
 const { parseUnimedMetadata } = require('./unimedMetadataParser');
 const { buildUnimedSpreadsheet } = require('./unimedSpreadsheetLayout');
 
@@ -25,7 +25,7 @@ function assertNonEmptyResults(results) {
 }
 
 function buildExportFileNameFromPdf(inputFile, extension) {
-  return `${sanitizeBaseName(inputFile)}.${extension}`;
+  return `${buildOutputBaseName(inputFile, 'pdf')}.${extension}`;
 }
 
 function resolveExportFileName(results, extension, fileName) {

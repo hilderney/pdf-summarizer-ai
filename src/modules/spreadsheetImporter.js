@@ -8,7 +8,7 @@ const { createExcelWriterAdapter } = require('../adapters/excelWriterAdapter');
 const { deriveSpreadsheetMetadata } = require('./spreadsheetMetadataParser');
 const { buildUnimedSpreadsheet } = require('./unimedSpreadsheetLayout');
 const { createLogger } = require('./logger');
-const { sanitizeBaseName } = require('../utils/paths');
+const { buildOutputBaseName } = require('../utils/paths');
 
 const SPREADSHEET_EXTENSIONS = new Set(['.xlsx', '.xls', '.csv', '.tsv', '.txt']);
 
@@ -70,8 +70,8 @@ function resolveInputPath(sourceFile, inputDir) {
   return path.join(path.resolve(inputDir || './input'), sourceFile);
 }
 
-function buildOutputBaseName(sourceFile) {
-  return sanitizeBaseName(path.basename(sourceFile));
+function buildOutputBaseNameFromSource(sourceFile) {
+  return buildOutputBaseName(path.basename(sourceFile), 'xlsx');
 }
 
 async function assertCanWrite(filePath, overwrite) {
@@ -119,7 +119,7 @@ async function importSpreadsheet(sourceFile, options = {}) {
     prestador: metadata.prestador,
   });
 
-  const outputBaseName = buildOutputBaseName(sourceFile);
+  const outputBaseName = buildOutputBaseNameFromSource(sourceFile);
   const absoluteOutputDir = path.resolve(outputDir);
   await fs.mkdir(absoluteOutputDir, { recursive: true });
 
@@ -170,6 +170,6 @@ module.exports = {
   importSpreadsheet,
   listSpreadsheets,
   resolveInputPath,
-  buildOutputBaseName,
+  buildOutputBaseName: buildOutputBaseNameFromSource,
   SPREADSHEET_EXTENSIONS,
 };

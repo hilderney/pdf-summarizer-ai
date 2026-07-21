@@ -1,6 +1,7 @@
 const {
   buildUnimedSpreadsheet,
   UNIMED_REPORT_HEADERS,
+  COLUMN_COUNT,
   sortRows,
   normalizeRow,
 } = require('../src/modules/unimedSpreadsheetLayout');
@@ -60,38 +61,81 @@ describe('unimedSpreadsheetLayout', () => {
   test('monta preâmbulo, cabeçalho e placeholders monetários', () => {
     const { sheetRows } = buildUnimedSpreadsheet({ text: SAMPLE_HEADER, rows: sampleRows() });
 
-    expect(sheetRows[0]).toEqual({
-      type: 'preamble',
-      cells: ['PSICOVITAE - CONSULTORIO DE PSICOLOGIA'],
-    });
+    expect(sheetRows[0].type).toBe('preamble');
+    expect(sheetRows[0].cells[0]).toBe('PSICOVITAE - CONSULTORIO DE PSICOLOGIA');
+    expect(sheetRows[0].meta).toEqual({ style: 'header1' });
     expect(sheetRows[1].type).toBe('preamble');
     expect(sheetRows[1].cells[0]).toContain('UNIMED - 1º PGTO PROGRAMADO PARA 05/07/2026');
+    expect(sheetRows[1].meta).toEqual({ style: 'header3' });
     expect(sheetRows[2]).toEqual({ type: 'header', cells: [...UNIMED_REPORT_HEADERS] });
+    expect(UNIMED_REPORT_HEADERS).toHaveLength(11);
+    expect(COLUMN_COUNT).toBe(11);
+    expect(UNIMED_REPORT_HEADERS).not.toContain('Item');
 
     const firstData = sheetRows.find((row) => row.type === 'data');
+    expect(firstData.cells).toHaveLength(11);
     expect(firstData.cells[6]).toBe('Consulta/Terapia');
-    expect(firstData.cells[8]).toBe('-');
-    expect(firstData.cells[9]).toBe('0,00 R$');
-    expect(firstData.cells[11]).toBe('0,00 R$');
+    expect(firstData.cells[8]).toBe('R$ 0,00');
+    expect(firstData.cells[10]).toBe('R$ 0,00');
   });
 
   test('insere subtotal por Executante e TOTAL GERAL', () => {
     const { sheetRows } = buildUnimedSpreadsheet({ text: SAMPLE_HEADER, rows: sampleRows() });
 
     const subtotals = sheetRows.filter((row) => row.type === 'subtotal');
+    const blankBeforeGrand = sheetRows.findIndex((row) => row.type === 'blank');
     const grandTotal = sheetRows.find((row) => row.type === 'grand-total');
-    const resumoTitle = sheetRows.find((row) => row.type === 'resumo-title');
 
     expect(subtotals).toHaveLength(2);
     expect(subtotals[0].cells[0]).toBe('TOTAL - BIANCA');
     expect(subtotals[0].cells[7]).toBe('2');
     expect(subtotals[1].cells[0]).toBe('TOTAL - VANESSA');
     expect(subtotals[1].cells[7]).toBe('2');
+    expect(blankBeforeGrand).toBeGreaterThan(-1);
+    expect(sheetRows[blankBeforeGrand + 1].type).toBe('grand-total');
     expect(grandTotal.cells[0]).toBe('TOTAL GERAL');
     expect(grandTotal.cells[7]).toBe('4');
-    expect(resumoTitle).toBeDefined();
     expect(sheetRows.some((row) => row.type === 'resumo-subtotal')).toBe(true);
     expect(sheetRows.some((row) => row.type === 'resumo-grand-total')).toBe(true);
+  });
+
+  test('soma valores monetários nos subtotais', () => {
+    const rows = [
+      {
+        protocolo: '1',
+        guia: '2',
+        requisicao: '3',
+        beneficiario: 'A',
+        dt_emis: '01/01/2026',
+        medico: 'BIANCA FERREIRA DE SOUZA',
+        codigo_procedimento: '50000470',
+        qt: '1',
+        vl_bruto: '40,42',
+        vl_glosa: '0',
+        vl_pago: '40,42',
+      },
+      {
+        protocolo: '1',
+        guia: '3',
+        requisicao: '4',
+        beneficiario: 'B',
+        dt_emis: '02/01/2026',
+        medico: 'BIANCA FERREIRA DE SOUZA',
+        codigo_procedimento: '50000470',
+        qt: '2',
+        vl_bruto: '45,54',
+        vl_glosa: '5,00',
+        vl_pago: '40,54',
+      },
+    ];
+
+    const { sheetRows } = buildUnimedSpreadsheet({ text: SAMPLE_HEADER, rows });
+    const subtotal = sheetRows.find((row) => row.type === 'subtotal');
+
+    expect(subtotal.cells[7]).toBe('3');
+    expect(subtotal.cells[8]).toBe('R$ 85,96');
+    expect(subtotal.cells[9]).toBe('R$ 5,00');
+    expect(subtotal.cells[10]).toBe('R$ 80,96');
   });
 
   test('mapeia colunas conforme layout Unimed', () => {
@@ -155,7 +199,7 @@ describe('unimedSpreadsheetLayout', () => {
     expect(normalized.vlGlosa).toBe('-');
   });
 
-  test('[F3-47] deve formatar vl_glosa=10,50 como 10,50 R$', () => {
+  test('[F3-47] deve formatar vl_glosa=10,50 como R$ 10,50', () => {
     const normalized = normalizeRow({
       protocolo: '1',
       guia: '2',
@@ -170,10 +214,10 @@ describe('unimedSpreadsheetLayout', () => {
       vl_glosa: '10,50',
       vl_pago: '29,92',
     });
-    expect(normalized.vlGlosa).toBe('10,50 R$');
+    expect(normalized.vlGlosa).toBe('R$ 10,50');
   });
 
-  test('[F3-48] deve usar item de Vl Bruto quando > 0 para RESUMO GERAL', () => {
+  test('[F3-48] deve usar Vl Bruto quando > 0 para RESUMO GERAL', () => {
     const normalized = normalizeRow({
       protocolo: '1',
       guia: '2',
@@ -188,6 +232,7 @@ describe('unimedSpreadsheetLayout', () => {
       vl_glosa: '0',
       vl_pago: '45,54',
     });
-    expect(normalized.item).toBe('45,54 R$');
+    expect(normalized.vlBruto).toBe('R$ 45,54');
+    expect(normalized.item).toBeUndefined();
   });
 });

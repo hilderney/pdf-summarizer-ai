@@ -36,7 +36,7 @@ describe('exporter — CSV (layout Unimed)', () => {
     await fs.rm(outputDir, { recursive: true, force: true });
   });
 
-  test('[RED-19] deve gerar CSV com prestador, linha UNIMED e cabeçalho de 12 colunas', async () => {
+  test('[RED-19] deve gerar CSV com prestador, linha UNIMED e cabeçalho de 11 colunas', async () => {
     const sampleText = await fs.readFile(UNIMED_SAMPLE_PATH, 'utf8');
     const { filePath } = await exportCsv(
       [buildResult({ inputFile: 'unimed.pdf', text: sampleText })],
@@ -52,6 +52,8 @@ describe('exporter — CSV (layout Unimed)', () => {
     expect(lines[2]).toContain('Requisição');
     expect(lines[2]).toContain('Executante');
     expect(lines[2]).toContain('Vl Pago');
+    expect(lines[2]).not.toContain('Item');
+    expect(lines[2].split('\t')).toHaveLength(11);
     expect(content).toContain('7063165');
     expect(content).toContain('TOTAL - BIANCA');
     expect(content).toContain('TOTAL GERAL');
@@ -96,7 +98,7 @@ describe('exporter — CSV (layout Unimed)', () => {
     });
 
     expect(path.isAbsolute(filePath)).toBe(true);
-    expect(path.basename(filePath)).toBe('relatorio.csv');
+    expect(path.basename(filePath)).toBe('relatorio_pdf.csv');
   });
 
   test('nome padrão do arquivo deve seguir o nome do PDF de origem', async () => {
@@ -106,7 +108,7 @@ describe('exporter — CSV (layout Unimed)', () => {
       outputDir,
     );
 
-    expect(path.basename(filePath)).toBe('Produ__o_unimed_pgto070726.csv');
+    expect(path.basename(filePath)).toBe('Produ__o_unimed_pgto070726_pdf.csv');
   });
 
   test('[RED-23] deve lançar ExportError se o array de entrada estiver vazio', async () => {
@@ -158,7 +160,7 @@ describe('exporter — Excel (layout Unimed)', () => {
     expect(worksheet.name).toBe('documents');
   });
 
-  test('[RED-25] deve incluir prestador, linha UNIMED e cabeçalho de 12 colunas', async () => {
+  test('[RED-25] deve incluir prestador, linha UNIMED e cabeçalho de 11 colunas', async () => {
     const sampleText = await fs.readFile(UNIMED_SAMPLE_PATH, 'utf8');
     const { filePath } = await exportXlsx(
       [buildResult({ text: sampleText })],
@@ -168,7 +170,9 @@ describe('exporter — Excel (layout Unimed)', () => {
     const worksheet = await readWorksheet(filePath);
 
     expect(worksheet.getRow(1).getCell(1).value).toBe('PSICOVITAE - CONSULTORIO DE PSICOLOGIA');
+    expect(worksheet.getRow(1).getCell(1).font?.size).toBe(16);
     expect(String(worksheet.getRow(2).getCell(1).value)).toContain('UNIMED - 1º PGTO PROGRAMADO PARA 05/07/2026');
+    expect(worksheet.getRow(2).getCell(1).font?.size).toBe(12);
     expect(worksheet.getRow(3).values.slice(1)).toEqual([
       'Requisição',
       'Protocolo',
@@ -178,11 +182,70 @@ describe('exporter — Excel (layout Unimed)', () => {
       'Executante',
       'Serviço',
       'Qt',
-      'Item',
       'Vl Bruto',
       'Vl Glosa',
       'Vl Pago',
     ]);
+    expect(worksheet.views?.[0]?.state).toBe('frozen');
+    expect(worksheet.views?.[0]?.ySplit).toBe(3);
+  });
+
+  test('valores monetários no XLSX devem ser número com formato R$', async () => {
+    const { createExcelWriterAdapter } = require('../src/adapters/excelWriterAdapter');
+    const { buildUnimedSpreadsheet } = require('../src/modules/unimedSpreadsheetLayout');
+    const filePath = path.join(outputDir, 'currency.xlsx');
+
+    const sheet = buildUnimedSpreadsheet({
+      text: '',
+      rows: [
+        {
+          protocolo: '1',
+          guia: '2',
+          requisicao: '3',
+          beneficiario: 'PACIENTE',
+          dt_emis: '01/01/2026',
+          medico: 'BIANCA FERREIRA DE SOUZA',
+          codigo_procedimento: '50000470',
+          qt: '1',
+          vl_bruto: '45,54',
+          vl_glosa: '0',
+          vl_pago: '45,54',
+        },
+      ],
+      metadata: {
+        prestador: 'CONSULTORIO',
+        paymentLine: 'UNIMED - TESTE',
+      },
+    });
+
+    await createExcelWriterAdapter('exceljs').writeSheet(filePath, sheet.sheetRows);
+    const worksheet = await readWorksheet(filePath);
+    let dataRow = null;
+    let resumoRateCell = null;
+
+    worksheet.eachRow((row) => {
+      if (row.getCell(4).value === 'PACIENTE') {
+        dataRow = row;
+      }
+      if (row.getCell(9).value === 'VR.SESSÕES') {
+        // header row of resumo — skip
+      }
+      const rateCell = row.getCell(9);
+      if (typeof rateCell.value === 'number' && Math.abs(rateCell.value - 45.54) < 0.001) {
+        resumoRateCell = rateCell;
+      }
+    });
+
+    expect(dataRow).toBeTruthy();
+    expect(typeof dataRow.getCell(9).value).toBe('number');
+    expect(dataRow.getCell(9).value).toBeCloseTo(45.54);
+    expect(dataRow.getCell(9).numFmt).toContain('R$');
+    expect(typeof dataRow.getCell(11).value).toBe('number');
+    expect(dataRow.getCell(11).value).toBeCloseTo(45.54);
+    expect(dataRow.getCell(10).value).toBe('-');
+    expect(typeof dataRow.getCell(8).value).toBe('number');
+    expect(resumoRateCell).toBeTruthy();
+    expect(resumoRateCell.numFmt).toContain('R$');
   });
 
   test('[RED-26] cada linha exportada deve conter dados mapeados sem source_pdf', async () => {
@@ -206,7 +269,7 @@ describe('exporter — Excel (layout Unimed)', () => {
     expect(ingridRow[3]).toBe('INGRID PINHEIRO ACIOLI');
     expect(ingridRow[5]).toBe('BIANCA FERREIRA DE SOUZA');
     expect(ingridRow[6]).toBe('Consulta/Terapia');
-    expect(ingridRow[7]).toBe('1');
+    expect(ingridRow[7]).toBe(1);
   });
 
   test('[RED-27] o arquivo Excel gerado deve ser válido (parseável por exceljs)', async () => {
@@ -226,7 +289,7 @@ describe('exporter — Excel (layout Unimed)', () => {
     });
 
     expect(path.isAbsolute(filePath)).toBe(true);
-    expect(path.basename(filePath)).toBe('relatorio.xlsx');
+    expect(path.basename(filePath)).toBe('relatorio_pdf.xlsx');
   });
 
   test('[RED-29] deve lançar ExportError se o array de entrada estiver vazio', async () => {

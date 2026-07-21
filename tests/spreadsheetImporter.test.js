@@ -36,7 +36,8 @@ describe('spreadsheetImporter', () => {
 
   test('[F3-29] deve importar fixture TSV e gerar .csv no layout unimed-report', async () => {
     const result = await importFixture(['csv']);
-    expect(result.exports.csv.filePath).toMatch(/unimed-demonstrativo\.csv$/);
+    expect(result.exports.csv.filePath).toMatch(/unimed-demonstrativo_xlsx\.csv$/);
+
     const content = await fs.readFile(result.exports.csv.filePath, 'utf8');
     expect(content).toContain('Requisição');
     expect(content).toContain('TOTAL GERAL');
@@ -44,7 +45,8 @@ describe('spreadsheetImporter', () => {
 
   test('[F3-30] deve importar fixture TSV e gerar .xlsx no layout unimed-report', async () => {
     const result = await importFixture(['xlsx']);
-    expect(result.exports.xlsx.filePath).toMatch(/unimed-demonstrativo\.xlsx$/);
+    expect(result.exports.xlsx.filePath).toMatch(/unimed-demonstrativo_xlsx\.xlsx$/);
+
   });
 
   test('[F3-31] linha 1 do CSV deve conter prestador derivado', async () => {
@@ -59,24 +61,24 @@ describe('spreadsheetImporter', () => {
     expect(lines[1]).toContain('UNIMED - 1º PGTO PROGRAMADO PARA');
   });
 
-  test('[F3-33] linha 3 do CSV deve conter cabeçalho com 12 colunas', async () => {
+  test('[F3-33] linha 3 do CSV deve conter cabeçalho com 11 colunas', async () => {
     const result = await importFixture(['csv']);
     const lines = (await fs.readFile(result.exports.csv.filePath, 'utf8')).split('\n');
-    expect(lines[2].split('\t')).toHaveLength(12);
+    expect(lines[2].split('\t')).toHaveLength(11);
   });
 
-  test('[F3-34] coluna Item deve conter valor real (ex.: 45,54 R$), não placeholder -', async () => {
+  test('[F3-34] coluna Vl Bruto deve conter valor real (ex.: R$ 45,54), não placeholder', async () => {
     const result = await importFixture(['csv']);
     const content = await fs.readFile(result.exports.csv.filePath, 'utf8');
-    expect(content).toContain('45,54 R$');
-    expect(content).not.toMatch(/\t-\t0,00 R\$/);
+    expect(content).toContain('R$ 45,54');
+    expect(content).not.toMatch(/\tR\$ 0,00\tR\$ 0,00/);
   });
 
-  test('[F3-35] coluna Vl Pago deve conter valor real (ex.: 45,54 R$), não 0,00 R$', async () => {
+  test('[F3-35] coluna Vl Pago deve conter valor real (ex.: R$ 45,54), não R$ 0,00', async () => {
     const result = await importFixture(['csv']);
     const content = await fs.readFile(result.exports.csv.filePath, 'utf8');
-    expect(content).toContain('45,54 R$');
-    expect(content).not.toContain('"0,00 R$"\t"0,00 R$"');
+    expect(content).toContain('R$ 45,54');
+    expect(content).not.toContain('"R$ 0,00"\t"R$ 0,00"');
   });
 
   test('[F3-36] deve incluir TOTAL - {Executante} após cada grupo', async () => {
@@ -97,8 +99,8 @@ describe('spreadsheetImporter', () => {
     const content = await fs.readFile(result.exports.csv.filePath, 'utf8');
     expect(content).toContain('RESUMO GERAL');
     expect(content).toContain('VR.SESSÕES');
-    expect(content).toContain('40,42 R$');
-    expect(content).toContain('45,54 R$');
+    expect(content).toContain('R$ 40,42');
+    expect(content).toContain('R$ 45,54');
   });
 
   test('[F3-39] deve ordenar linhas por Executante → Beneficiário', async () => {
@@ -111,7 +113,7 @@ describe('spreadsheetImporter', () => {
 
   test('[F3-40] deve usar nome de saída derivado do arquivo de entrada (sanitizeBaseName)', async () => {
     const result = await importFixture(['csv']);
-    expect(path.basename(result.exports.csv.filePath)).toBe('unimed-demonstrativo.csv');
+    expect(path.basename(result.exports.csv.filePath)).toBe('unimed-demonstrativo_xlsx.csv');
   });
 
   test('[F3-41] deve respeitar overwrite: false e lançar ExportError se arquivo existe', async () => {

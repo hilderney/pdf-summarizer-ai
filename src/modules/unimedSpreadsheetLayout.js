@@ -11,23 +11,22 @@ const UNIMED_REPORT_HEADERS = [
   'Executante',
   'Serviço',
   'Qt',
-  'Item',
   'Vl Bruto',
   'Vl Glosa',
   'Vl Pago',
 ];
 
 const COLUMN_COUNT = UNIMED_REPORT_HEADERS.length;
+const SUBTOTAL_LABEL_COLSPAN = 5;
 
 const SERVICE_LABELS = {
   '50000470': 'Consulta/Terapia',
   '50001221': 'Consulta Ambulatorial',
 };
 
-const PLACEHOLDER_ITEM = '-';
-const PLACEHOLDER_BRUTO = '0,00 R$';
+const PLACEHOLDER_BRUTO = 'R$ 0,00';
 const PLACEHOLDER_GLOSA = '-';
-const PLACEHOLDER_PAGO = '0,00 R$';
+const PLACEHOLDER_PAGO = 'R$ 0,00';
 
 function mapServiceLabel(row) {
   if (row.codigo_procedimento && SERVICE_LABELS[row.codigo_procedimento]) {
@@ -61,7 +60,11 @@ function formatMoneyOutput(value) {
   }
 
   if (String(value).includes('R$')) {
-    return value;
+    const amount = parseBrazilianMoney(value);
+    if (amount <= 0) {
+      return null;
+    }
+    return formatBrazilianMoney(amount, { emptyAsDash: false });
   }
 
   const amount = parseBrazilianMoney(value);
@@ -78,7 +81,6 @@ function normalizeRow(row) {
   const vlBruto = resolveMoneyField(row, 'vlBruto', 'vl_bruto');
   const vlGlosaRaw = resolveMoneyField(row, 'vlGlosa', 'vl_glosa');
 
-  const itemFormatted = formatMoneyOutput(item || vlBruto);
   const brutoFormatted = formatMoneyOutput(vlBruto || item);
   const pagoFormatted = formatMoneyOutput(vlPago);
   const glosaAmount = parseBrazilianMoney(vlGlosaRaw);
@@ -94,7 +96,6 @@ function normalizeRow(row) {
     executante: row.medico || row.executante || '',
     servico: mapServiceLabel(row),
     qt: Number.parseInt(row.qt, 10) || 0,
-    item: itemFormatted || PLACEHOLDER_ITEM,
     vlBruto: brutoFormatted || PLACEHOLDER_BRUTO,
     vlGlosa: glosaAmount > 0 ? formatBrazilianMoney(glosaAmount, { emptyAsDash: false }) : PLACEHOLDER_GLOSA,
     vlPago: pagoFormatted || PLACEHOLDER_PAGO,
@@ -111,7 +112,6 @@ function rowToCells(normalized) {
     normalized.executante,
     normalized.servico,
     String(normalized.qt),
-    normalized.item,
     normalized.vlBruto,
     normalized.vlGlosa,
     normalized.vlPago,
@@ -141,24 +141,38 @@ function buildSubtotalCells(label, service, totals) {
   cells[0] = label;
   cells[6] = service;
   cells[7] = String(totals.qt);
-  cells[8] = PLACEHOLDER_ITEM;
-  cells[9] = totals.vlBruto;
-  cells[10] = totals.vlGlosa;
-  cells[11] = totals.vlPago;
+  cells[8] = totals.vlBruto;
+  cells[9] = totals.vlGlosa;
+  cells[10] = totals.vlPago;
   return cells;
 }
 
 function emptyTotals() {
   return {
     qt: 0,
-    vlBruto: PLACEHOLDER_BRUTO,
-    vlGlosa: PLACEHOLDER_GLOSA,
-    vlPago: PLACEHOLDER_PAGO,
+    vlBrutoAmount: 0,
+    vlGlosaAmount: 0,
+    vlPagoAmount: 0,
+  };
+}
+
+function formatTotals(totals) {
+  return {
+    qt: totals.qt,
+    vlBruto: formatBrazilianMoney(totals.vlBrutoAmount, { emptyAsDash: false }),
+    vlGlosa:
+      totals.vlGlosaAmount > 0
+        ? formatBrazilianMoney(totals.vlGlosaAmount, { emptyAsDash: false })
+        : PLACEHOLDER_GLOSA,
+    vlPago: formatBrazilianMoney(totals.vlPagoAmount, { emptyAsDash: false }),
   };
 }
 
 function addToTotals(totals, row) {
   totals.qt += row.qt;
+  totals.vlBrutoAmount += parseBrazilianMoney(row.vlBruto);
+  totals.vlGlosaAmount += parseBrazilianMoney(row.vlGlosa);
+  totals.vlPagoAmount += parseBrazilianMoney(row.vlPago);
 }
 
 function buildGroupedSheetRows(normalizedRows) {
@@ -188,8 +202,9 @@ function buildGroupedSheetRows(normalizedRows) {
       cells: buildSubtotalCells(
         `TOTAL - ${executanteShortName(executante)}`,
         group[0]?.servico || 'Consulta/Terapia',
-        totals,
+        formatTotals(totals),
       ),
+      meta: { labelColspan: SUBTOTAL_LABEL_COLSPAN },
     });
   }
 
@@ -208,23 +223,30 @@ function buildGrandTotalRows(normalizedRows) {
 
   return {
     type: 'grand-total',
-    cells: buildSubtotalCells('TOTAL GERAL', serviceLabel, totals),
+    cells: buildSubtotalCells('TOTAL GERAL', serviceLabel, formatTotals(totals)),
+    meta: { labelColspan: SUBTOTAL_LABEL_COLSPAN },
   };
 }
 
 function buildUnimedSpreadsheet({ text, rows, metadata }) {
   const resolvedMetadata = metadata ?? parseUnimedMetadata(text);
+  const prestador = String(resolvedMetadata.prestador || '').toUpperCase();
   const normalizedRows = sortRows(rows.map(normalizeRow));
   const dataAndSubtotals = buildGroupedSheetRows(normalizedRows);
 
   const sheetRows = [
-    { type: 'preamble', cells: [resolvedMetadata.prestador] },
-    { type: 'preamble', cells: [resolvedMetadata.paymentLine] },
+    { type: 'preamble', cells: [prestador], meta: { style: 'header1' } },
+    {
+      type: 'preamble',
+      cells: [resolvedMetadata.paymentLine],
+      meta: { style: 'header3' },
+    },
     { type: 'header', cells: [...UNIMED_REPORT_HEADERS] },
     ...dataAndSubtotals,
   ];
 
   if (normalizedRows.length > 0) {
+    sheetRows.push({ type: 'blank', cells: new Array(COLUMN_COUNT).fill('') });
     sheetRows.push(buildGrandTotalRows(normalizedRows));
     sheetRows.push(...buildResumoGeralSheetRows(normalizedRows));
   }
@@ -232,7 +254,7 @@ function buildUnimedSpreadsheet({ text, rows, metadata }) {
   return {
     sheetRows,
     columnCount: COLUMN_COUNT,
-    metadata: resolvedMetadata,
+    metadata: { ...resolvedMetadata, prestador },
     dataRowCount: normalizedRows.length,
   };
 }
@@ -240,6 +262,7 @@ function buildUnimedSpreadsheet({ text, rows, metadata }) {
 module.exports = {
   UNIMED_REPORT_HEADERS,
   COLUMN_COUNT,
+  SUBTOTAL_LABEL_COLSPAN,
   mapServiceLabel,
   normalizeRow,
   buildUnimedSpreadsheet,

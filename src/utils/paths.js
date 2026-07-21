@@ -5,6 +5,18 @@ function sanitizeBaseName(fileName) {
   return base.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+function buildOutputBaseName(fileName, sourceSuffix) {
+  const base = sanitizeBaseName(fileName);
+  if (!sourceSuffix) {
+    return base;
+  }
+  const suffix = String(sourceSuffix).replace(/^_/, '');
+  if (base.endsWith(`_${suffix}`)) {
+    return base;
+  }
+  return `${base}_${suffix}`;
+}
+
 function resolveAbsolute(filePath) {
   return path.resolve(filePath);
 }
@@ -18,6 +30,7 @@ function isPathInside(baseDir, targetPath) {
 
 module.exports = {
   sanitizeBaseName,
+  buildOutputBaseName,
   resolveAbsolute,
   isPathInside,
 };

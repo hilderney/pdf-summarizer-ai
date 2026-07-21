@@ -26,11 +26,11 @@ describe('extractor', () => {
     expect(result.text).toContain('Hello PDF');
   });
 
-  test('[RED-11] deve gerar arquivo .txt com mesmo nome base do PDF no diretório de saída', async () => {
+  test('[RED-11] deve gerar arquivo .txt com sufixo _pdf no diretório de saída', async () => {
     const pdfPath = await writeMinimalPdf(inputDir, 'doc.pdf');
     const result = await extractText(pdfPath, outputDir, { overwrite: true });
 
-    expect(result.outputFile).toBe(path.join(outputDir, 'doc.txt'));
+    expect(result.outputFile).toBe(path.join(outputDir, 'doc_pdf.txt'));
     await expect(fs.access(result.outputFile)).resolves.toBeUndefined();
   });
 
@@ -40,7 +40,7 @@ describe('extractor', () => {
 
     expect(result).toMatchObject({
       inputFile: 'doc.pdf',
-      outputFile: path.join(outputDir, 'doc.txt'),
+      outputFile: path.join(outputDir, 'doc_pdf.txt'),
       pageCount: expect.any(Number),
       charCount: expect.any(Number),
     });
@@ -86,7 +86,7 @@ describe('extractor', () => {
   test('[RED-17] deve não sobrescrever arquivo .txt existente (a menos que { overwrite: true })', async () => {
     const pdfPath = await writeMinimalPdf(inputDir, 'doc.pdf');
     await extractText(pdfPath, outputDir, { overwrite: true });
-    await fs.writeFile(path.join(outputDir, 'doc.txt'), 'existing', 'utf8');
+    await fs.writeFile(path.join(outputDir, 'doc_pdf.txt'), 'existing', 'utf8');
 
     await expect(extractText(pdfPath, outputDir)).rejects.toThrow(ExtractionError);
     await expect(extractText(pdfPath, outputDir, { overwrite: true })).resolves.toBeDefined();

@@ -38,9 +38,9 @@ describe('PdfSummarizerBuilder', () => {
     expect(summary.failed).toBe(0);
     expect(summary.exports.csv).toHaveLength(1);
     expect(summary.exports.xlsx).toHaveLength(1);
-    expect(path.basename(summary.exports.csv[0].filePath)).toBe('doc.csv');
-    expect(path.basename(summary.exports.xlsx[0].filePath)).toBe('doc.xlsx');
-    await expect(fs.access(path.join(outputDir, 'doc.txt'))).resolves.toBeUndefined();
+    expect(path.basename(summary.exports.csv[0].filePath)).toBe('doc_pdf.csv');
+    expect(path.basename(summary.exports.xlsx[0].filePath)).toBe('doc_pdf.xlsx');
+    await expect(fs.access(path.join(outputDir, 'doc_pdf.txt'))).resolves.toBeUndefined();
     await expect(fs.access(summary.logFile)).resolves.toBeUndefined();
   });
 });
