@@ -33,6 +33,10 @@ const api = {
     return this.request('/api/v1/files');
   },
 
+  deleteFile(filename) {
+    return this.request(`/api/v1/files/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+  },
+
   fsRoots() {
     return this.request('/api/v1/fs/roots');
   },

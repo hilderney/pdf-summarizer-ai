@@ -46,6 +46,26 @@ async function listOutputFiles(outputDir, baseUrl) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+async function deleteOutputFile(outputDir, fileName) {
+  if (!isPathInside(outputDir, fileName)) {
+    throw new LinkerError('Invalid file path');
+  }
+
+  const filePath = path.join(path.resolve(outputDir), path.basename(fileName));
+
+  try {
+    await fs.unlink(filePath);
+    return { deleted: true, name: path.basename(fileName) };
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      const notFound = new LinkerError(`File not found: ${fileName}`);
+      notFound.statusCode = 404;
+      throw notFound;
+    }
+    throw new LinkerError(`Failed to delete file: ${fileName}`, error);
+  }
+}
+
 function createRequestHandler(outputDir, baseUrl) {
   const absoluteOutputDir = path.resolve(outputDir);
 
@@ -144,4 +164,5 @@ module.exports = {
   createServer,
   getContentType,
   listOutputFiles,
+  deleteOutputFile,
 };

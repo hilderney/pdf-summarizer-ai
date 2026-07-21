@@ -7,5 +7,14 @@ document.querySelectorAll('.tab').forEach((tab) => {
   });
 });
 
-initInputUi();
-initLlmUi();
+if (typeof window.initInputUi === 'function') {
+  window.initInputUi();
+} else {
+  console.error('initInputUi não definido — verifique /js/input-ui.js e /js/file-input-utils.js');
+}
+
+if (typeof window.initLlmUi === 'function') {
+  window.initLlmUi();
+} else {
+  console.error('initLlmUi não definido — verifique /js/llm-ui.js');
+}

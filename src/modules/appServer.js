@@ -3,7 +3,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const { LinkerError } = require('../errors');
 const { isPathInside } = require('../utils/paths');
-const { listOutputFiles, getContentType } = require('./linker');
+const { listOutputFiles, getContentType, deleteOutputFile } = require('./linker');
 const { getRoots, browse } = require('./fsBrowser');
 const { stagePdfFiles, stageInputFiles } = require('./stagingUpload');
 const { processInputFiles } = require('./inputProcessService');
@@ -169,6 +169,17 @@ function createAppRequestHandler(options) {
       if (req.method === 'GET' && pathname === '/api/v1/files') {
         const files = await listOutputFiles(outputDir, baseUrl);
         return sendJson(res, 200, { files });
+      }
+
+      const deleteFileMatch = pathname.match(/^\/api\/v1\/files\/(.+)$/);
+      if (req.method === 'DELETE' && deleteFileMatch) {
+        const requestedName = decodeURIComponent(deleteFileMatch[1]);
+        try {
+          const result = await deleteOutputFile(outputDir, requestedName);
+          return sendJson(res, 200, result);
+        } catch (error) {
+          return sendJson(res, error.statusCode || 500, { error: error.message });
+        }
       }
 
       if (req.method === 'GET' && pathname === '/api/v1/fs/roots') {

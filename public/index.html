@@ -32,7 +32,7 @@
           <p class="drop-zone-subtitle">PDFs e planilhas (.pdf, .xlsx, .xls) — ou clique para escolher</p>
         </div>
       </div>
-      <input type="file" id="file-input" accept=".pdf,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/octet-stream" multiple hidden>
+      <input type="file" id="file-input" accept=".pdf,.xlsx,.xls,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/octet-stream" multiple hidden style="display: none;">
 
       <div class="actions">
         <button type="button" id="btn-pick-files">Selecionar arquivos...</button>
@@ -114,6 +114,26 @@
       <p><a id="llm-response-link" href="#" target="_blank" rel="noopener"></a></p>
     </section>
   </main>
+
+  <div id="confirm-delete-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-delete-title" hidden>
+    <div class="modal-backdrop" data-confirm-dismiss></div>
+    <div class="modal-dialog modal-dialog--confirm">
+      <div class="modal-header">
+        <h3 id="confirm-delete-title">Excluir arquivo</h3>
+        <button type="button" class="modal-close" data-confirm-dismiss aria-label="Fechar">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-delete-message"></p>
+        <p class="confirm-warning">Após excluído, o arquivo não poderá mais ser recuperado.</p>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" data-confirm-dismiss>Cancelar</button>
+          <button type="button" class="btn-danger" id="confirm-delete-btn">Excluir</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="/js/api-client.js"></script>
   <script src="/js/file-input-utils.js"></script>

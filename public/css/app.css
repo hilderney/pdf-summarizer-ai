@@ -106,6 +106,17 @@ button.btn-secondary:hover,
   border-color: var(--accent);
 }
 
+button.btn-danger,
+.btn-danger {
+  background: var(--danger);
+  color: white;
+}
+
+button.btn-danger:hover,
+.btn-danger:hover {
+  background: #dc2626;
+}
+
 .path-picker label {
   margin-bottom: 0.5rem;
 }
@@ -228,10 +239,28 @@ a { color: var(--accent); }
   display: flex;
   gap: 0.75rem;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
 }
 
-.file-actions a {
+.file-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.9rem;
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.file-action-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
 }
 
 .file-download {
@@ -240,6 +269,14 @@ a { color: var(--accent); }
 
 .file-download:hover {
   color: var(--accent);
+}
+
+.file-delete {
+  color: var(--danger);
+}
+
+.file-delete:hover {
+  color: #f87171;
 }
 
 .error { color: var(--danger); }
@@ -275,6 +312,28 @@ a { color: var(--accent); }
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
 }
 
+.modal-dialog--confirm {
+  width: min(440px, 100%);
+}
+
+.modal-body {
+  padding: 1rem 1.25rem;
+}
+
+.modal-body p {
+  margin: 0 0 0.75rem;
+  color: var(--text);
+}
+
+.modal-body p:last-child {
+  margin-bottom: 0;
+}
+
+.confirm-warning {
+  color: var(--danger);
+  font-size: 0.9rem;
+}
+
 .modal-header,
 .modal-footer,
 .modal-toolbar {
@@ -305,7 +364,7 @@ a { color: var(--accent); }
   border-bottom: none;
   border-top: 1px solid var(--border);
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 1rem;
 }
@@ -313,6 +372,10 @@ a { color: var(--accent); }
 .modal-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.modal-dialog--confirm .modal-footer {
+  justify-content: flex-end;
 }
 
 .breadcrumb {
