@@ -37,6 +37,19 @@ describe('unimedMoney', () => {
     expect(formatSessionRate(40.42)).toBe('R$ 40,42');
     expect(formatBrazilianMoney(0)).toBe('-');
   });
+
+  test('aceita decimal com ponto (Excel / Google Sheets / Drive)', () => {
+    expect(parseBrazilianMoney('45.54')).toBeCloseTo(45.54);
+    expect(parseBrazilianMoney(45.54)).toBeCloseTo(45.54);
+    expect(parseBrazilianMoney('1,092.96')).toBeCloseTo(1092.96);
+    expect(parseBrazilianMoney('R$ 45.54')).toBeCloseTo(45.54);
+  });
+
+  test('mantém formato brasileiro com milhar e vírgula', () => {
+    expect(parseBrazilianMoney('45,54')).toBeCloseTo(45.54);
+    expect(parseBrazilianMoney('1.092,96')).toBeCloseTo(1092.96);
+    expect(parseBrazilianMoney('1.234')).toBeCloseTo(1234);
+  });
 });
 
 describe('unimedResumoGeral', () => {

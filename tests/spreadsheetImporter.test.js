@@ -36,7 +36,7 @@ describe('spreadsheetImporter', () => {
 
   test('[F3-29] deve importar fixture TSV e gerar .csv no layout unimed-report', async () => {
     const result = await importFixture(['csv']);
-    expect(result.exports.csv.filePath).toMatch(/unimed-demonstrativo_xlsx\.csv$/);
+    expect(result.exports.csv.filePath).toMatch(/unimed-demonstrativo_sheet\.csv$/);
 
     const content = await fs.readFile(result.exports.csv.filePath, 'utf8');
     expect(content).toContain('Requisição');
@@ -45,7 +45,7 @@ describe('spreadsheetImporter', () => {
 
   test('[F3-30] deve importar fixture TSV e gerar .xlsx no layout unimed-report', async () => {
     const result = await importFixture(['xlsx']);
-    expect(result.exports.xlsx.filePath).toMatch(/unimed-demonstrativo_xlsx\.xlsx$/);
+    expect(result.exports.xlsx.filePath).toMatch(/unimed-demonstrativo_sheet\.xlsx$/);
 
   });
 
@@ -113,7 +113,7 @@ describe('spreadsheetImporter', () => {
 
   test('[F3-40] deve usar nome de saída derivado do arquivo de entrada (sanitizeBaseName)', async () => {
     const result = await importFixture(['csv']);
-    expect(path.basename(result.exports.csv.filePath)).toBe('unimed-demonstrativo_xlsx.csv');
+    expect(path.basename(result.exports.csv.filePath)).toBe('unimed-demonstrativo_sheet.csv');
   });
 
   test('[F3-41] deve respeitar overwrite: false e lançar ExportError se arquivo existe', async () => {

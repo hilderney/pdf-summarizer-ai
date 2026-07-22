@@ -71,7 +71,7 @@ function resolveInputPath(sourceFile, inputDir) {
 }
 
 function buildOutputBaseNameFromSource(sourceFile) {
-  return buildOutputBaseName(path.basename(sourceFile), 'xlsx');
+  return buildOutputBaseName(path.basename(sourceFile), 'sheet');
 }
 
 async function assertCanWrite(filePath, overwrite) {
