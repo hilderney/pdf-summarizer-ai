@@ -6,6 +6,7 @@ const { createPersistenceAdapter } = require('../adapters/persistenceAdapter');
 const { createCryptoAdapter } = require('../adapters/cryptoAdapter');
 const { createLlmModelService } = require('../modules/llmModelService');
 const { createLlmProcessService } = require('../modules/llmProcessService');
+const { createAuthService } = require('../modules/authService');
 
 class LlmSummarizerBuilder {
   constructor() {
@@ -22,6 +23,15 @@ class LlmSummarizerBuilder {
     this._port = 4000;
     this._host = '127.0.0.1';
     this._staticDir = './public';
+    this._auth = {
+      enabled: true,
+      jwtSecretEnv: 'JWT_SECRET',
+      accessTtlSeconds: Number(process.env.JWT_ACCESS_TTL_SECONDS || 900),
+      refreshTtlSeconds: Number(process.env.JWT_REFRESH_TTL_SECONDS || 7 * 24 * 60 * 60),
+      elevationTtlSeconds: Number(process.env.ELEVATION_TTL_SECONDS || 900),
+      bootstrapAdminUser: process.env.BOOTSTRAP_ADMIN_USER || 'admin',
+      bootstrapAdminPassword: process.env.BOOTSTRAP_ADMIN_PASSWORD || 'admin123',
+    };
   }
 
   static create() {
@@ -73,6 +83,16 @@ class LlmSummarizerBuilder {
     return this;
   }
 
+  withAuth(options = {}) {
+    this._auth = { ...this._auth, ...options, enabled: true };
+    return this;
+  }
+
+  withoutAuth() {
+    this._auth = { ...this._auth, enabled: false };
+    return this;
+  }
+
   serve({ port = 4000, host = '127.0.0.1', staticDir = './public' } = {}) {
     this._serve = true;
     this._port = port;
@@ -105,6 +125,7 @@ class LlmSummarizerBuilder {
       port: this._port,
       host: this._host,
       staticDir: path.resolve(this._staticDir),
+      auth: { ...this._auth },
     };
   }
 }
@@ -117,6 +138,7 @@ class LlmSummarizerApp {
     this.persistence = null;
     this.llmModelService = null;
     this.llmProcessService = null;
+    this.authService = null;
   }
 
   async start() {
@@ -151,6 +173,39 @@ class LlmSummarizerApp {
 
     const cryptoAdapter = createCryptoAdapter(cryptoOptions);
 
+    this.authService = null;
+    if (config.auth.enabled) {
+      if (!process.env[config.auth.jwtSecretEnv]) {
+        process.env[config.auth.jwtSecretEnv] = crypto.randomBytes(32).toString('hex');
+        const warning =
+          `${config.auth.jwtSecretEnv} não definida — chave efêmera gerada. ` +
+          'Sessões não sobrevivem a reinícios. Defina JWT_SECRET no .env (veja .env.example).';
+        this.logger.warn(warning);
+        console.warn(`[pdf-summarizer] ${warning}`);
+      }
+
+      this.authService = createAuthService({
+        persistence: this.persistence,
+        cryptoAdapter,
+        jwtSecret: process.env[config.auth.jwtSecretEnv],
+        accessTtlSeconds: config.auth.accessTtlSeconds,
+        refreshTtlSeconds: config.auth.refreshTtlSeconds,
+        elevationTtlSeconds: config.auth.elevationTtlSeconds,
+      });
+
+      const seeded = await this.authService.seedAdminIfEmpty({
+        username: config.auth.bootstrapAdminUser,
+        password: config.auth.bootstrapAdminPassword,
+      });
+      if (seeded && !process.env.BOOTSTRAP_ADMIN_PASSWORD) {
+        const warning =
+          `Usuário ADM inicial "${seeded.username}" criado com a senha padrão. ` +
+          'Defina BOOTSTRAP_ADMIN_PASSWORD no .env e troque a senha imediatamente.';
+        this.logger.warn(warning);
+        console.warn(`[pdf-summarizer] ${warning}`);
+      }
+    }
+
     this.llmModelService = createLlmModelService({
       persistence: this.persistence,
       cryptoAdapter,
@@ -174,6 +229,7 @@ class LlmSummarizerApp {
         phase1Api: config.phase1Api,
         llmModelService: this.llmModelService,
         llmProcessService: this.llmProcessService,
+        authService: this.authService,
       });
 
       this.llmProcessService = createLlmProcessService({

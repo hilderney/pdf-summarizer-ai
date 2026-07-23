@@ -27,17 +27,26 @@ function createLlmProcessService({
   logger = null,
 }) {
   async function processRequest(input) {
-    const modelConfig = await modelService.getModelConfig(input.llmModelId);
+    const userId = input.userId;
+    if (!userId) {
+      const error = new Error('userId is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const modelConfig = await modelService.getModelConfig(input.llmModelId, userId);
     if (!modelConfig) {
       const error = new Error('LLM model not found');
       error.statusCode = 404;
       throw error;
     }
 
-    const fileData = await fileReader.readFileContent(input.sourceFile, outputDir);
+    const effectiveOutputDir = input.outputDir || outputDir;
+    const fileData = await fileReader.readFileContent(input.sourceFile, effectiveOutputDir);
     const prompt = buildPrompt(input.promptTemplate, fileData.content);
 
     const job = await persistence.createLlmJob({
+      userId,
       llmModelId: input.llmModelId,
       sourceFile: input.sourceFile,
       sourceType: fileData.sourceType,
@@ -75,20 +84,24 @@ function createLlmProcessService({
         raw: llmResult.raw,
       };
 
-      await fs.mkdir(path.resolve(outputDir), { recursive: true });
+      await fs.mkdir(path.resolve(effectiveOutputDir), { recursive: true });
       await fs.writeFile(
-        path.join(path.resolve(outputDir), responseFileName),
+        path.join(path.resolve(effectiveOutputDir), responseFileName),
         JSON.stringify(responsePayload, null, 2),
         'utf8',
       );
 
       const completedAt = nowIso();
-      const updatedJob = await persistence.updateLlmJob(job.id, {
-        status: 'completed',
-        responseFile: responseFileName,
-        summary,
-        completedAt,
-      });
+      const updatedJob = await persistence.updateLlmJob(
+        job.id,
+        {
+          status: 'completed',
+          responseFile: responseFileName,
+          summary,
+          completedAt,
+        },
+        userId,
+      );
 
       logger?.info?.('LLM process completed', {
         jobId: job.id,
@@ -104,11 +117,15 @@ function createLlmProcessService({
         usage: llmResult.usage,
       };
     } catch (error) {
-      await persistence.updateLlmJob(job.id, {
-        status: 'failed',
-        errorMessage: error.message,
-        completedAt: nowIso(),
-      });
+      await persistence.updateLlmJob(
+        job.id,
+        {
+          status: 'failed',
+          errorMessage: error.message,
+          completedAt: nowIso(),
+        },
+        userId,
+      );
 
       logger?.error?.('LLM process failed', error);
 
@@ -119,8 +136,14 @@ function createLlmProcessService({
     }
   }
 
-  async function getJob(id) {
-    const job = await persistence.getLlmJob(id);
+  async function getJob(id, userId) {
+    if (!userId) {
+      const error = new Error('userId is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const job = await persistence.getLlmJob(id, userId);
     if (!job) {
       return null;
     }
@@ -133,8 +156,14 @@ function createLlmProcessService({
     };
   }
 
-  async function listJobs(filter = {}) {
-    const jobs = await persistence.listLlmJobs(filter);
+  async function listJobs(filter = {}, userId) {
+    if (!userId) {
+      const error = new Error('userId is required');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const jobs = await persistence.listLlmJobs({ ...filter, userId });
     return jobs.map((job) => ({
       ...job,
       responseUrl: job.responseFile

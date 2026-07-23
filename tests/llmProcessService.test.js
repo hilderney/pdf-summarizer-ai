@@ -33,7 +33,7 @@ describe('llmProcessService', () => {
       name: 'Ollama',
       provider: 'ollama',
       modelId: 'llama3',
-    });
+    }, 'test-user-1');
     modelId = model.id;
 
     mockAdapter = {
@@ -79,7 +79,7 @@ describe('llmProcessService', () => {
       createLlmAdapterFn,
     });
 
-    await localService.processRequest({ llmModelId: modelId, sourceFile: 'input.txt' });
+    await localService.processRequest({ llmModelId: modelId, sourceFile: 'input.txt', userId: 'test-user-1' });
     expect(readFileContent).toHaveBeenCalledWith('input.txt', outputDir);
   });
 
@@ -90,12 +90,13 @@ describe('llmProcessService', () => {
   });
 
   test('[F2-36] deve chamar LlmAdapter correto conforme provider do modelo', async () => {
-    await processService.processRequest({ llmModelId: modelId, sourceFile: 'input.txt' });
+    await processService.processRequest({ llmModelId: modelId, sourceFile: 'input.txt', userId: 'test-user-1' });
     expect(createLlmAdapterFn).toHaveBeenCalledWith('ollama');
   });
 
   test('[F2-37] deve gravar JSON em output/ com nome llm_response_<timestamp>_<id>.json', async () => {
     const result = await processService.processRequest({
+      userId: 'test-user-1',
       llmModelId: modelId,
       sourceFile: 'input.txt',
     });
@@ -108,6 +109,7 @@ describe('llmProcessService', () => {
 
   test('[F2-38] deve persistir job com status completed e summary', async () => {
     const result = await processService.processRequest({
+      userId: 'test-user-1',
       llmModelId: modelId,
       sourceFile: 'input.txt',
     });
@@ -125,15 +127,16 @@ describe('llmProcessService', () => {
     });
 
     await expect(
-      processService.processRequest({ llmModelId: modelId, sourceFile: 'input.txt' }),
+      processService.processRequest({ llmModelId: modelId, sourceFile: 'input.txt', userId: 'test-user-1' }),
     ).rejects.toMatchObject({ statusCode: 502 });
 
-    const jobs = await persistence.listLlmJobs();
+    const jobs = await persistence.listLlmJobs({ userId: 'test-user-1' });
     expect(jobs[0].status).toBe('failed');
   });
 
   test('[F2-40] responseUrl deve apontar para /open/<filename>', async () => {
     const result = await processService.processRequest({
+      userId: 'test-user-1',
       llmModelId: modelId,
       sourceFile: 'input.txt',
     });

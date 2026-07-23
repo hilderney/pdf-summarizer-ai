@@ -48,7 +48,7 @@ describe('LlmSummarizerBuilder', () => {
       name: 'Test',
       provider: 'ollama',
       modelId: 'llama3',
-    });
+    }, 'test-user-1');
     expect(model.id).toBeTruthy();
     await app.close();
   });

@@ -27,6 +27,7 @@ describe('memoryPersistence', () => {
 
   test('[F2-12] dados não persistem após nova instância (isolamento de teste)', async () => {
     const created = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'Test',
       provider: 'ollama',
       modelId: 'llama3',

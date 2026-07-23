@@ -8,6 +8,9 @@ const { getRoots, browse } = require('./fsBrowser');
 const { stagePdfFiles, stageInputFiles } = require('./stagingUpload');
 const { processInputFiles } = require('./inputProcessService');
 const { importSpreadsheet, listSpreadsheets } = require('./spreadsheetImporter');
+const { listLogs, readLog, deleteLog, batchDeleteLogs } = require('./logViewerService');
+const { createAuthGuard } = require('./authGuard');
+const { resolveUserWorkspace, OPEN_MODE_USER_ID } = require('../utils/userWorkspace');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -152,9 +155,10 @@ function createPipelineController(phase1Api, config) {
   };
 }
 
-async function handleDeleteFile(ctx, res, requestedName) {
+async function handleDeleteFile(ctx, res, requestedName, auth) {
+  const { outputDir } = resolveUserWorkspace(ctx, auth);
   try {
-    const result = await deleteOutputFile(ctx.outputDir, requestedName);
+    const result = await deleteOutputFile(outputDir, requestedName);
     return sendJson(res, 200, result);
   } catch (error) {
     return sendJson(res, error.statusCode || 500, { error: error.message });
@@ -169,19 +173,33 @@ async function handleFsBrowse(res, url) {
   return sendJson(res, 200, await browse(targetPath));
 }
 
-async function handleInputStage(ctx, req, res) {
+async function handleInputStage(ctx, req, res, auth) {
   const body = await readJsonBody(req);
   if (!Array.isArray(body.files) || body.files.length === 0) {
     return sendJson(res, 400, { error: 'files array is required' });
   }
-  const staged = await stageInputFiles(body.files, ctx.stagingDir);
+  const { stagingDir } = resolveUserWorkspace(ctx, auth);
+  const staged = await stageInputFiles(body.files, stagingDir);
   return sendJson(res, 201, staged);
 }
 
-async function handleInputProcess(ctx, req, res) {
+async function handleInputProcess(ctx, req, res, auth) {
   const body = await readJsonBody(req);
   if (!body.inputDir || !Array.isArray(body.files) || body.files.length === 0) {
     return sendJson(res, 400, { error: 'inputDir and files are required' });
+  }
+
+  const { stagingDir, outputDir } = resolveUserWorkspace(ctx, auth);
+  const resolvedInput = path.resolve(body.inputDir);
+  const resolvedStaging = path.resolve(stagingDir);
+  if (
+    resolvedInput !== resolvedStaging &&
+    !resolvedInput.startsWith(resolvedStaging + path.sep)
+  ) {
+    return sendJson(res, 403, {
+      error: 'inputDir outside user workspace',
+      code: 'WORKSPACE_FORBIDDEN',
+    });
   }
 
   for (const fileName of body.files) {
@@ -191,7 +209,7 @@ async function handleInputProcess(ctx, req, res) {
   }
 
   const summary = await processInputFiles(body.inputDir, body.files, {
-    outputDir: body.outputDir || ctx.outputDir,
+    outputDir,
     logsDir: body.logsDir || ctx.logsDir,
     phase1Api: ctx.phase1Api,
     baseUrl: ctx.baseUrl,
@@ -200,19 +218,20 @@ async function handleInputProcess(ctx, req, res) {
   return sendJson(res, 200, summary);
 }
 
-async function handleInputRun(ctx, req, res) {
+async function handleInputRun(ctx, req, res, auth) {
   const body = await readJsonBody(req);
   if (!Array.isArray(body.files) || body.files.length === 0) {
     return sendJson(res, 400, { error: 'files array is required' });
   }
 
-  const staged = await stageInputFiles(body.files, ctx.stagingDir);
+  const { stagingDir, outputDir } = resolveUserWorkspace(ctx, auth);
+  const staged = await stageInputFiles(body.files, stagingDir);
   const fileNames = body.processNames?.length
     ? body.processNames.filter((name) => staged.files.some((file) => file.name === name))
     : staged.files.map((file) => file.name);
 
   const summary = await processInputFiles(staged.inputDir, fileNames, {
-    outputDir: body.outputDir || ctx.outputDir,
+    outputDir,
     logsDir: body.logsDir || ctx.logsDir,
     phase1Api: ctx.phase1Api,
     baseUrl: ctx.baseUrl,
@@ -230,12 +249,13 @@ async function handleSpreadsheetScan(ctx, req, res) {
   return sendJson(res, 200, { files });
 }
 
-async function handleSpreadsheetImport(ctx, req, res) {
+async function handleSpreadsheetImport(ctx, req, res, auth) {
   const body = await readJsonBody(req);
   if (!body.sourceFile) {
     return sendJson(res, 400, { error: 'sourceFile is required' });
   }
 
+  const { outputDir } = resolveUserWorkspace(ctx, auth);
   const targetInputDir = body.inputDir || ctx.inputDir;
   if (!isPathInside(targetInputDir, body.sourceFile)) {
     return sendJson(res, 400, { error: 'Invalid file path' });
@@ -244,7 +264,7 @@ async function handleSpreadsheetImport(ctx, req, res) {
   try {
     const result = await importSpreadsheet(body.sourceFile, {
       inputDir: targetInputDir,
-      outputDir: body.outputDir || ctx.outputDir,
+      outputDir,
       formats: body.formats || DEFAULT_FORMATS,
       overwrite: body.overwrite !== false,
       logsDir: body.logsDir || ctx.logsDir,
@@ -259,28 +279,78 @@ async function handleSpreadsheetImport(ctx, req, res) {
   }
 }
 
-async function handlePipelineAction(ctx, req, res, pathname) {
+async function handleListLogs(ctx, res, url) {
+  const logs = await listLogs(ctx.logsDir, {
+    search: url.searchParams.get('search') || undefined,
+    sort: url.searchParams.get('sort') || 'date',
+    order: url.searchParams.get('order') || 'desc',
+  });
+  return sendJson(res, 200, { logs });
+}
+
+async function handleReadLog(ctx, res, filename) {
+  try {
+    const result = await readLog(ctx.logsDir, filename);
+    return sendJson(res, 200, result);
+  } catch (error) {
+    return sendJson(res, error.statusCode || 500, {
+      error: error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
+  }
+}
+
+async function handleDeleteLog(ctx, res, filename) {
+  try {
+    const result = await deleteLog(ctx.logsDir, filename);
+    return sendJson(res, 200, result);
+  } catch (error) {
+    return sendJson(res, error.statusCode || 500, {
+      error: error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
+  }
+}
+
+async function handleBatchDeleteLogs(ctx, req, res) {
+  const body = await readJsonBody(req);
+  try {
+    const result = await batchDeleteLogs(ctx.logsDir, body.files);
+    return sendJson(res, 200, result);
+  } catch (error) {
+    return sendJson(res, error.statusCode || 500, {
+      error: error.message,
+      ...(error.code ? { code: error.code } : {}),
+    });
+  }
+}
+
+async function handlePipelineAction(ctx, req, res, pathname, auth) {
   const body = await readJsonBody(req);
   const action = pathname.replace('/api/v1/pipeline/', '');
   const runner = ctx.pipeline[action];
+  const { outputDir } = resolveUserWorkspace(ctx, auth);
 
   if (!runner || !['scan', 'extract', 'export', 'run'].includes(action)) {
     return sendJson(res, 404, { error: 'Unknown pipeline action' });
   }
 
-  return sendJson(res, 200, await runner(body));
+  // Ignora outputDir do client — sempre o workspace do usuário autenticado.
+  return sendJson(res, 200, await runner({ ...body, outputDir }));
 }
 
-async function handleModelRoute(ctx, req, res, modelMatch) {
+async function handleModelRoute(ctx, req, res, modelMatch, auth) {
   const modelId = modelMatch[1];
   const isHealth = modelMatch[2] === 'health';
+  // Sem authService (testes F1–4) usa um tenant local fixo.
+  const userId = auth?.userId ?? OPEN_MODE_USER_ID;
 
   if (isHealth && req.method === 'POST') {
-    return sendJson(res, 200, await ctx.llmModelService.healthCheck(modelId));
+    return sendJson(res, 200, await ctx.llmModelService.healthCheck(modelId, userId));
   }
 
   if (req.method === 'GET') {
-    const model = await ctx.llmModelService.get(modelId);
+    const model = await ctx.llmModelService.get(modelId, userId);
     return model
       ? sendJson(res, 200, model)
       : sendJson(res, 404, { error: 'Model not found' });
@@ -288,7 +358,7 @@ async function handleModelRoute(ctx, req, res, modelMatch) {
 
   if (req.method === 'PUT') {
     const body = await readJsonBody(req);
-    const model = await ctx.llmModelService.update(modelId, body);
+    const model = await ctx.llmModelService.update(modelId, body, userId);
     return model
       ? sendJson(res, 200, model)
       : sendJson(res, 404, { error: 'Model not found' });
@@ -296,7 +366,7 @@ async function handleModelRoute(ctx, req, res, modelMatch) {
 
   if (req.method === 'DELETE') {
     try {
-      const deleted = await ctx.llmModelService.remove(modelId);
+      const deleted = await ctx.llmModelService.remove(modelId, userId);
       if (!deleted) {
         return sendJson(res, 404, { error: 'Model not found' });
       }
@@ -310,10 +380,154 @@ async function handleModelRoute(ctx, req, res, modelMatch) {
   return NOT_HANDLED;
 }
 
-async function handleLlmProcess(ctx, req, res) {
+async function handleAuthLogin(ctx, req, res) {
   const body = await readJsonBody(req);
+  return sendJson(res, 200, await ctx.authService.login(body));
+}
+
+async function handleAuthRefresh(ctx, req, res) {
+  const body = await readJsonBody(req);
+  return sendJson(res, 200, await ctx.authService.refresh(body));
+}
+
+async function handleAuthLogout(ctx, req, res) {
+  const body = await readJsonBody(req);
+  return sendJson(res, 200, await ctx.authService.logout(body));
+}
+
+async function handleAuthMe(ctx, req, res, auth) {
+  const user = await ctx.authService.getUser(auth.userId);
+  const subscription = ctx.authService.getSubscriptionInfo(user);
+
+  let elevated = false;
+  let elevationExpiresAt = null;
+  const elevationToken = req.headers['x-elevation-token'];
+  if (elevationToken) {
+    try {
+      const claims = ctx.authService.verifyElevationToken(elevationToken, auth.userId);
+      elevated = true;
+      elevationExpiresAt = new Date(claims.exp * 1000).toISOString();
+    } catch {
+      elevated = false;
+    }
+  }
+
+  return sendJson(res, 200, {
+    user,
+    elevated,
+    elevationExpiresAt,
+    subscription,
+    accessTtlSeconds: ctx.authService.getAccessTtlSeconds(),
+  });
+}
+
+async function handleAuthElevate(ctx, req, res, auth) {
+  const body = await readJsonBody(req);
+  return sendJson(res, 200, await ctx.authService.elevate(auth.userId, body.code));
+}
+
+async function handleAuthTotpSetup(ctx, res, auth) {
+  return sendJson(res, 200, await ctx.authService.setupTotp(auth.userId));
+}
+
+async function handleAuthTotpConfirm(ctx, req, res, auth) {
+  const body = await readJsonBody(req);
+  return sendJson(res, 200, await ctx.authService.confirmTotp(auth.userId, body.code));
+}
+
+async function handleAuthUsers(ctx, req, res) {
+  if (req.method === 'GET') {
+    return sendJson(res, 200, { users: await ctx.authService.listUsers() });
+  }
+  if (req.method === 'POST') {
+    const body = await readJsonBody(req);
+    return sendJson(res, 201, await ctx.authService.createUser(body));
+  }
+  return NOT_HANDLED;
+}
+
+async function handleAuthUserSubscription(ctx, req, res, userId) {
+  if (req.method !== 'PATCH' && req.method !== 'PUT') {
+    return NOT_HANDLED;
+  }
+  const body = await readJsonBody(req);
+  if (body.months != null) {
+    return sendJson(
+      res,
+      200,
+      await ctx.authService.renewSubscription(userId, {
+        months: Number(body.months) || 1,
+        plan: body.plan,
+      }),
+    );
+  }
+  return sendJson(
+    res,
+    200,
+    await ctx.authService.updateSubscription(userId, {
+      expiresAt: body.expiresAt,
+      plan: body.plan,
+      status: body.status,
+    }),
+  );
+}
+
+function routeAuthRequest(ctx, req, res, pathname, auth) {
+  if (!ctx.authService) {
+    return sendJson(res, 404, { error: 'Authentication is not enabled' });
+  }
+
+  const isPost = req.method === 'POST';
+
+  if (isPost && pathname === '/api/v1/auth/login') {
+    return handleAuthLogin(ctx, req, res);
+  }
+  if (isPost && pathname === '/api/v1/auth/refresh') {
+    return handleAuthRefresh(ctx, req, res);
+  }
+  if (isPost && pathname === '/api/v1/auth/logout') {
+    return handleAuthLogout(ctx, req, res);
+  }
+  if (req.method === 'GET' && pathname === '/api/v1/auth/me') {
+    return handleAuthMe(ctx, req, res, auth);
+  }
+  if (isPost && pathname === '/api/v1/auth/elevate') {
+    return handleAuthElevate(ctx, req, res, auth);
+  }
+  if (isPost && pathname === '/api/v1/auth/totp/setup') {
+    return handleAuthTotpSetup(ctx, res, auth);
+  }
+  if (isPost && pathname === '/api/v1/auth/totp/confirm') {
+    return handleAuthTotpConfirm(ctx, req, res, auth);
+  }
+
+  const subscriptionMatch = pathname.match(/^\/api\/v1\/auth\/users\/([^/]+)\/subscription$/);
+  if (subscriptionMatch) {
+    return Promise.resolve(
+      handleAuthUserSubscription(ctx, req, res, decodeURIComponent(subscriptionMatch[1])),
+    ).then((result) =>
+      result === NOT_HANDLED ? sendJson(res, 404, { error: 'Route not found' }) : result,
+    );
+  }
+
+  if (pathname === '/api/v1/auth/users') {
+    return Promise.resolve(handleAuthUsers(ctx, req, res)).then((result) =>
+      result === NOT_HANDLED ? sendJson(res, 404, { error: 'Route not found' }) : result,
+    );
+  }
+
+  return sendJson(res, 404, { error: 'Route not found' });
+}
+
+async function handleLlmProcess(ctx, req, res, auth) {
+  const body = await readJsonBody(req);
+  const { outputDir, userId } = resolveUserWorkspace(ctx, auth);
   try {
-    const result = await ctx.llmProcessService.processRequest(body);
+    const result = await ctx.llmProcessService.processRequest({
+      ...body,
+      userId: auth?.userId ?? userId,
+      outputDir,
+    });
     return sendJson(res, 201, result);
   } catch (error) {
     return sendJson(res, error.statusCode || 502, {
@@ -323,10 +537,14 @@ async function handleLlmProcess(ctx, req, res) {
   }
 }
 
-function routeRequest(ctx, req, res, url) {
+function routeRequest(ctx, req, res, url, auth) {
   const { pathname } = url;
   const isGet = req.method === 'GET';
   const isPost = req.method === 'POST';
+
+  if (pathname.startsWith('/api/v1/auth/')) {
+    return routeAuthRequest(ctx, req, res, pathname, auth);
+  }
 
   if (isGet && pathname === '/') {
     return serveStaticFile(res, ctx.staticDir, 'index.html');
@@ -337,12 +555,13 @@ function routeRequest(ctx, req, res, url) {
   }
 
   if (isGet && pathname === '/api/v1/files') {
-    return listOutputFiles(ctx.outputDir, ctx.baseUrl).then((files) => sendJson(res, 200, { files }));
+    const { outputDir } = resolveUserWorkspace(ctx, auth);
+    return listOutputFiles(outputDir, ctx.baseUrl).then((files) => sendJson(res, 200, { files }));
   }
 
   const deleteFileMatch = pathname.match(/^\/api\/v1\/files\/(.+)$/);
   if (req.method === 'DELETE' && deleteFileMatch) {
-    return handleDeleteFile(ctx, res, decodeURIComponent(deleteFileMatch[1]));
+    return handleDeleteFile(ctx, res, decodeURIComponent(deleteFileMatch[1]), auth);
   }
 
   if (isGet && pathname === '/api/v1/fs/roots') {
@@ -354,26 +573,28 @@ function routeRequest(ctx, req, res, url) {
   }
 
   if (isPost && pathname === '/api/v1/pipeline/stage') {
+    const { stagingDir } = resolveUserWorkspace(ctx, auth);
     return readJsonBody(req).then((body) =>
-      stagePdfFiles(body.files, ctx.stagingDir).then((staged) => sendJson(res, 201, staged)),
+      stagePdfFiles(body.files, stagingDir).then((staged) => sendJson(res, 201, staged)),
     );
   }
 
   const openMatch = pathname.match(/^\/open\/(.+)$/);
   if (isGet && openMatch) {
-    return serveOutputFile(res, ctx.outputDir, decodeURIComponent(openMatch[1]));
+    const { outputDir } = resolveUserWorkspace(ctx, auth);
+    return serveOutputFile(res, outputDir, decodeURIComponent(openMatch[1]));
   }
 
   if (isPost && pathname === '/api/v1/input/stage') {
-    return handleInputStage(ctx, req, res);
+    return handleInputStage(ctx, req, res, auth);
   }
 
   if (isPost && pathname === '/api/v1/input/process') {
-    return handleInputProcess(ctx, req, res);
+    return handleInputProcess(ctx, req, res, auth);
   }
 
   if (isPost && pathname === '/api/v1/input/run') {
-    return handleInputRun(ctx, req, res);
+    return handleInputRun(ctx, req, res, auth);
   }
 
   if (isPost && pathname === '/api/v1/spreadsheet/scan') {
@@ -381,44 +602,69 @@ function routeRequest(ctx, req, res, url) {
   }
 
   if (isPost && pathname === '/api/v1/spreadsheet/import') {
-    return handleSpreadsheetImport(ctx, req, res);
+    return handleSpreadsheetImport(ctx, req, res, auth);
+  }
+
+  if (isGet && pathname === '/api/v1/logs') {
+    return handleListLogs(ctx, res, url);
+  }
+
+  if (isPost && pathname === '/api/v1/logs/batch-delete') {
+    return handleBatchDeleteLogs(ctx, req, res);
+  }
+
+  const logMatch = pathname.match(/^\/api\/v1\/logs\/(.+)$/);
+  if (logMatch) {
+    const filename = decodeURIComponent(logMatch[1]);
+    if (isGet) {
+      return handleReadLog(ctx, res, filename);
+    }
+    if (req.method === 'DELETE') {
+      return handleDeleteLog(ctx, res, filename);
+    }
   }
 
   if (isPost && pathname.startsWith('/api/v1/pipeline/')) {
-    return handlePipelineAction(ctx, req, res, pathname);
+    return handlePipelineAction(ctx, req, res, pathname, auth);
   }
 
   if (isGet && pathname === '/api/v1/llm/models') {
     const provider = url.searchParams.get('provider') || undefined;
+    const userId = auth?.userId ?? OPEN_MODE_USER_ID;
     return ctx.llmModelService
-      .list(provider ? { provider } : {})
+      .list(provider ? { provider } : {}, userId)
       .then((models) => sendJson(res, 200, { models }));
   }
 
   if (isPost && pathname === '/api/v1/llm/models') {
+    const userId = auth?.userId ?? OPEN_MODE_USER_ID;
     return readJsonBody(req)
-      .then((body) => ctx.llmModelService.create(body))
+      .then((body) => ctx.llmModelService.create(body, userId))
       .then((model) => sendJson(res, 201, model));
   }
 
   const modelMatch = pathname.match(/^\/api\/v1\/llm\/models\/([^/]+)(?:\/(health))?$/);
   if (modelMatch) {
-    return handleModelRoute(ctx, req, res, modelMatch).then((result) =>
+    return handleModelRoute(ctx, req, res, modelMatch, auth).then((result) =>
       result === NOT_HANDLED ? sendJson(res, 404, { error: 'Route not found' }) : result,
     );
   }
 
   if (isPost && pathname === '/api/v1/llm/process') {
-    return handleLlmProcess(ctx, req, res);
+    return handleLlmProcess(ctx, req, res, auth);
   }
 
   if (isGet && pathname === '/api/v1/llm/jobs') {
-    return ctx.llmProcessService.listJobs().then((jobs) => sendJson(res, 200, { jobs }));
+    const userId = auth?.userId ?? OPEN_MODE_USER_ID;
+    return ctx.llmProcessService.listJobs({}, userId).then((jobs) =>
+      sendJson(res, 200, { jobs }),
+    );
   }
 
   const jobMatch = pathname.match(/^\/api\/v1\/llm\/jobs\/([^/]+)$/);
   if (isGet && jobMatch) {
-    return ctx.llmProcessService.getJob(jobMatch[1]).then((job) =>
+    const userId = auth?.userId ?? OPEN_MODE_USER_ID;
+    return ctx.llmProcessService.getJob(jobMatch[1], userId).then((job) =>
       job ? sendJson(res, 200, job) : sendJson(res, 404, { error: 'Job not found' }),
     );
   }
@@ -434,12 +680,16 @@ function createAppRequestHandler(options) {
     phase1Api,
     llmModelService,
     llmProcessService,
+    authService = null,
     logsDir = './logs',
     stagingDir = './staging',
     inputDir = process.env.INPUT_DIR || './input',
   } = options;
 
   const pipeline = createPipelineController(phase1Api, { outputDir, logsDir });
+  // Sem authService (testes unitários das fases 1-4) o servidor opera aberto;
+  // o LlmSummarizerBuilder sempre injeta authService em produção.
+  const authGuard = authService ? createAuthGuard({ authService }) : null;
   const ctx = {
     outputDir,
     staticDir,
@@ -447,6 +697,7 @@ function createAppRequestHandler(options) {
     phase1Api,
     llmModelService,
     llmProcessService,
+    authService,
     logsDir,
     stagingDir,
     inputDir,
@@ -456,7 +707,8 @@ function createAppRequestHandler(options) {
   return async (req, res) => {
     try {
       const url = new URL(req.url, baseUrl);
-      return await routeRequest(ctx, req, res, url);
+      const auth = authGuard ? await authGuard.enforce(req, url, url.pathname) : null;
+      return await routeRequest(ctx, req, res, url, auth);
     } catch (error) {
       return sendError(res, error);
     }
@@ -475,6 +727,7 @@ async function createAppServer(options = {}) {
     phase1Api,
     llmModelService,
     llmProcessService,
+    authService = null,
     httpImpl = http,
   } = options;
 
@@ -490,6 +743,7 @@ async function createAppServer(options = {}) {
     phase1Api,
     llmModelService,
     llmProcessService,
+    authService,
     logsDir,
     stagingDir,
     inputDir,

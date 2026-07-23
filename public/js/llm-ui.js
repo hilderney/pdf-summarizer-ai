@@ -244,7 +244,7 @@ function initLlmUi() {
       });
 
       summaryEl.textContent = result.summary || '(sem resumo)';
-      linkEl.href = result.responseUrl;
+      linkEl.href = result.responseUrl ? api.withAuthQuery(result.responseUrl) : '#';
       linkEl.textContent = result.responseUrl ? 'Abrir resposta JSON' : '';
       await refreshOutputFilesTable();
     } catch (error) {

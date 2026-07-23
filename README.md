@@ -1,8 +1,17 @@
 # PDF Summarizer AI
 
-Pipeline modular em Node.js para extrair texto de PDFs, estruturar dados tabulares, exportar planilhas e processar conteúdo com LLMs. A **Fase 1** entrega a base reutilizável; a **Fase 2** adiciona interface web, API REST e integração Ollama/OpenRouter.
+Pipeline modular em Node.js para extrair texto de PDFs, estruturar dados tabulares, exportar planilhas e processar conteúdo com LLMs — com interface web, gestão de logs e autenticação JWT + TOTP.
 
-Especificações: [`FASE1.spec.md`](FASE1.spec.md) · [`FASE2.spec.md`](FASE2.spec.md)
+| Fase | Entrega |
+|------|---------|
+| **1** | Base reutilizável (scan → extração → CSV/Excel → links → logs) |
+| **2** | UI web + API REST + CRUD LLM (Ollama/OpenRouter) |
+| **3** | Entrada unificada de arquivos (PDF + planilhas) na aba Arquivos |
+| **4** | Aba de gerenciamento de logs (listar, filtrar, abrir, excluir) |
+| **5** | Login JWT + 2FA TOTP, roles ADM/USER e elevação para processar/ler arquivos |
+| **6** | Multi-tenant (models/jobs por usuário), assinatura mensal, MySQL |
+
+Especificações: [`FASE1.spec.md`](FASE1.spec.md) · [`FASE2.spec.md`](FASE2.spec.md) · [`FASE4.spec.md`](FASE4.spec.md) · [`FASE5.spec.md`](FASE5.spec.md) · [`FASE6.spec.md`](FASE6.spec.md)
 
 ---
 
@@ -12,7 +21,11 @@ Especificações: [`FASE1.spec.md`](FASE1.spec.md) · [`FASE2.spec.md`](FASE2.sp
 |------|--------|--------|
 | **1** | Scan → extração → exportação (CSV/Excel) → links locais → logs | Implementada |
 | **2** | UI web + API REST + CRUD LLM (Ollama/OpenRouter) + resposta JSON | Implementada |
-| **3** | Instalador standalone Windows (`.exe`) | Planejada |
+| **3** | Aba Arquivos unificada (PDF + XLS/XLSX), pipeline de entrada | Implementada |
+| **4** | Aba Logs — listar, filtrar, visualizar e excluir `.log` | Implementada |
+| **5** | Autenticação JWT + refresh, TOTP (30 s), RBAC ADM/USER | Implementada |
+| **6** | Multi-tenant + assinatura mensal + adapter MySQL | Implementada |
+| **7** | Instalador standalone Windows (`.exe`) | Planejada |
 
 ---
 
@@ -75,20 +88,26 @@ Links: `http://localhost:4000/files`
 npm run start:web
 ```
 
-Abre a UI em `http://127.0.0.1:4000` com 3 abas:
+Abre a UI em `http://127.0.0.1:4000`. Com a Fase 5 ativa, a tela inicia no **login**; após autenticar, as abas disponíveis dependem da role:
 
-1. **Pipeline** — executa scan/extract/export da Fase 1 via API
-2. **Modelos LLM** — CRUD de modelos Ollama e OpenRouter (token criptografado)
-3. **Processar** — envia `.txt`/`.csv`/`.xlsx` para a LLM; exibe resumo e link do JSON
+| Aba | Conteúdo | Quem vê |
+|-----|----------|---------|
+| **Arquivos** | Upload/processamento de PDF e planilhas + arquivos gerados | ADM e USER |
+| **Logs** | Listar, filtrar, abrir e excluir logs de sessão | Só ADM |
+| **LLM Config** | CRUD de modelos Ollama e OpenRouter (token criptografado) — **por usuário** | ADM e USER |
+| **LLM** | Envia `.txt`/`.csv`/`.xlsx` para a LLM; resumo + link JSON — **por usuário** | ADM e USER |
 
 ### API REST (`/api/v1`)
 
-| Grupo | Rotas |
-|-------|-------|
-| Pipeline | `POST /api/v1/pipeline/scan`, `/extract`, `/export`, `/run` |
-| Arquivos | `GET /api/v1/files`, `GET /open/:filename` |
-| LLM CRUD | `GET/POST/PUT/DELETE /api/v1/llm/models`, `POST .../health` |
-| Processamento | `POST /api/v1/llm/process`, `GET /api/v1/llm/jobs` |
+| Grupo | Rotas | Auth (Fase 5) |
+|-------|-------|---------------|
+| Auth | `POST /auth/login`, `/refresh`, `/logout`, `/elevate`, `/totp/*`, `GET /auth/me`, `/auth/users` | público / sessão / ADM |
+| Pipeline | `POST /pipeline/scan`, `/extract`, `/export`, `/run`, `/stage` | sessão + elevação |
+| Entrada | `POST /input/stage`, `/process`, `/run` | sessão + elevação |
+| Arquivos | `GET /files`, `DELETE /files/:name`, `GET /open/:filename` | sessão + elevação |
+| Logs | `GET /logs`, `GET/DELETE /logs/:name`, `POST /logs/batch-delete` | sessão + ADM |
+| LLM CRUD | `GET/POST/PUT/DELETE /llm/models`, `POST .../health` | sessão + ADM |
+| Processamento | `POST /llm/process`, `GET /llm/jobs` | ADM (+ elevação no process) |
 
 ### Facade Fase 2
 
@@ -110,19 +129,28 @@ await app.start();
 // app.url → http://127.0.0.1:4000
 ```
 
-### Variáveis de ambiente (Fase 2)
+### Variáveis de ambiente
 
 O arquivo `.env` na raiz do projeto é carregado automaticamente ao iniciar `npm run start:web`. Copie `.env.example` para `.env` e preencha os valores.
 
 | Variável | Default | Descrição |
 |----------|---------|-----------|
-| `APP_SECRET_KEY` | gerada em dev (efêmera) | Chave AES-256 para tokens OpenRouter. **Defina uma chave fixa** (hex 64 chars) para tokens sobreviverem a reinícios |
+| `APP_SECRET_KEY` | gerada em dev (efêmera) | Chave AES-256 para tokens OpenRouter e segredos TOTP. **Defina uma chave fixa** (hex 64 chars) para sobreviverem a reinícios |
+| `JWT_SECRET` | gerada em dev (efêmera) | Assinatura dos JWTs de sessão/elevação. **Defina uma chave fixa** em produção |
+| `BOOTSTRAP_ADMIN_USER` | `admin` | Usuário ADM criado no primeiro boot (só se o banco não tiver usuários) |
+| `BOOTSTRAP_ADMIN_PASSWORD` | `admin123` | Senha do ADM seed — **troque imediatamente** |
+| `JWT_ACCESS_TTL_SECONDS` | `900` | Validade do access token / countdown na UI (15 min) |
+| `JWT_REFRESH_TTL_SECONDS` | `604800` | Validade do refresh token (7 dias) |
+| `ELEVATION_TTL_SECONDS` | `900` | Validade da elevação TOTP (15 min) |
 | `OPENROUTER_API_KEY` | — | Opcional; token global (não substitui token por modelo na UI) |
-| `DB_PATH` | `./data/app.db` | SQLite |
+| `DB_PATH` | `./data/app.db` | SQLite (quando `PERSISTENCE=sqlite`) |
+| `PERSISTENCE` | `sqlite` | `sqlite` ou `mysql` |
+| `MYSQL_HOST` / `PORT` / `USER` / `PASSWORD` / `DATABASE` | — | Credenciais MySQL (Hostinger) |
 | `PORT` | `4000` | Porta HTTP |
+| `HOST` | `127.0.0.1` | Bind HTTP (localhost por padrão) |
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama local |
 
-Gerar `APP_SECRET_KEY`:
+Gerar chaves:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -130,9 +158,101 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ---
 
+## Fase 4 — Aba de Logs
+
+Especificação: [`FASE4.spec.md`](FASE4.spec.md)
+
+A aba **Logs** (somente ADM) permite gerenciar os arquivos NDJSON gerados pelo logger:
+
+- Listagem de `.log` em `logs/` com tamanho e data de modificação
+- Filtro por nome (case-insensitive) e ordenação por nome ou data
+- Checkbox por arquivo + “Selecionar todos” (apenas linhas visíveis)
+- **Abrir** — carrega o conteúdo na área de visualização (read-only)
+- **Excluir selecionados** — exclusão em lote com confirmação
+
+### API de logs
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| `GET` | `/api/v1/logs` | Lista logs (`?search=&sort=date\|name&order=asc\|desc`) |
+| `GET` | `/api/v1/logs/:filename` | Conteúdo textual do log |
+| `DELETE` | `/api/v1/logs/:filename` | Remove um arquivo |
+| `POST` | `/api/v1/logs/batch-delete` | Body `{ files: ["a.log", ...] }` |
+
+Path traversal e extensões diferentes de `.log` são rejeitados (`isPathInside` + validação de nome).
+
+---
+
+## Fase 5 — Autenticação e autorização
+
+Especificação: [`FASE5.spec.md`](FASE5.spec.md)
+
+### Modelo de sessão
+
+| Credencial | Duração | Concede |
+|------------|---------|---------|
+| **Access JWT** (user/senha) | ~15 min | Sessão + abas conforme role |
+| **Refresh token** (opaco, rotacionado) | ~7 dias | Renova o access sem novo login; expirado → **deslogado** |
+| **Elevation token** (código TOTP de 6 dígitos / 30 s) | 15 min | Processar e ler arquivos; expirado → pede TOTP de novo (continua logado) |
+
+Fluxo típico:
+
+```
+Login (user+senha) → abas por role
+        │
+        ├─► 1º acesso sem TOTP → modal de setup (secret / otpauth URI) → Authenticator
+        │
+        └─► Processar/ler arquivo → pede código TOTP → elevação 15 min
+                │
+                ├─► Access expira → refresh automático (continua logado)
+                └─► Refresh expira/revogado → volta à tela de login
+```
+
+### Roles
+
+| Role | Abas | APIs |
+|------|------|------|
+| `ADM` | Todas | Todas (elevação exigida nas de arquivo) |
+| `USER` | Só **Arquivos** | Só input/pipeline/files/open (+ auth); 403 no resto |
+
+O gate é aplicado no **backend** (401/403) e refletido na UI (abas ocultas). A UI nunca é a única barreira.
+
+### Primeiro acesso
+
+1. Defina `JWT_SECRET`, `APP_SECRET_KEY` e `BOOTSTRAP_ADMIN_PASSWORD` no `.env`
+2. `npm run start:web`
+3. Entre com o usuário ADM seed e cadastre o TOTP no Google Authenticator / Authy
+4. (Opcional) Crie usuários `USER` via `POST /api/v1/auth/users` (só ADM)
+
+Tokens OpenRouter e o segredo TOTP ficam criptografados no SQLite (AES-256-GCM). Senhas usam `scrypt`; JWT e TOTP usam apenas `crypto` nativo do Node — nenhuma dependência npm nova.
+
+---
+
+## Fase 6 — Multi-tenant, assinatura e MySQL
+
+Especificação: [`FASE6.spec.md`](FASE6.spec.md)
+
+- Cada usuário tem **seus próprios** models e jobs (`user_id`).
+- **Arquivos isolados no disco:** `output/<userId>/` e `staging/<userId>/` (listagem, download, stage e processamentos).
+- Assinatura mensal **manual**: campos `subscription_status`, `subscription_expires_at`, `subscription_plan`. Sem Stripe/PIX.
+- **ADM** isento de expiração; **USER** bloqueado (`403 SUBSCRIPTION_EXPIRED`) se a assinatura não estiver ativa.
+- Renovação via API ADM: `PATCH /api/v1/auth/users/:id/subscription` com `{ months: 1 }` ou `{ expiresAt, plan, status }`.
+- Persistência: `PERSISTENCE=sqlite` (dev) ou `PERSISTENCE=mysql` (produção Hostinger).
+
+```bash
+# .env produção Hostinger (exemplo)
+PERSISTENCE=mysql
+MYSQL_HOST=...
+MYSQL_USER=...
+MYSQL_PASSWORD=...
+MYSQL_DATABASE=pdf_summarizer
+```
+
+---
+
 ## Arquitetura modular
 
-A Fase 1 foi pensada para ser **composta**, não monolítica. Cada camada tem responsabilidade única e pode ser chamada isoladamente pela Fase 2/3.
+A Fase 1 foi pensada para ser **composta**, não monolítica. Cada camada tem responsabilidade única e pode ser chamada isoladamente pelas fases seguintes.
 
 ```
 pdf-summarizer-ai/
@@ -141,22 +261,23 @@ pdf-summarizer-ai/
 │   ├── api-v2.js              # Facade Fase 2 (re-exporta Fase 1 + LLM)
 │   ├── server.js              # Entry point web (npm run start:web)
 │   ├── index.js               # CLI
-│   ├── adapters/              # Troca de bibliotecas (pdf-parse, exceljs, pino…)
-│   ├── modules/               # Regras de negócio puras
+│   ├── adapters/              # PDF, Excel, crypto, JWT, persistence…
+│   ├── modules/               # Regras de negócio (incl. auth, logs, input)
 │   ├── pipeline/              # Orquestração fluente (Builder)
 │   ├── errors/                # Erros tipados
 │   └── utils/                 # Utilitários compartilhados
-└── tests/                     # TDD (50 testes)
+├── public/                    # UI (login, abas, api-client)
+└── tests/                     # TDD / SDD por fase
 ```
 
 ### Camadas
 
 | Camada | Papel | Consumida por |
 |--------|-------|----------------|
-| **modules** | Lógica de domínio (scan, extract, export, log, links) | Pipeline, API, Fase 2 |
-| **adapters** | Implementação concreta de libs externas | Modules (injeção/factory) |
-| **pipeline** | Orquestra o fluxo completo com Builder | CLI, apps da Fase 2/3 |
-| **api.js** | Facade estável para import externo | Fase 2, Fase 3, testes de integração |
+| **modules** | Lógica de domínio (scan, extract, export, log, auth, logs UI) | Pipeline, API, UI |
+| **adapters** | Implementação concreta de libs / crypto / JWT / DB | Modules (injeção/factory) |
+| **pipeline** | Orquestra o fluxo completo com Builder | CLI, `start:web` |
+| **api.js** | Facade estável para import externo | Integrações e testes |
 
 ### Fluxo de dados
 
@@ -385,52 +506,47 @@ const parsed = createTableParserAdapter('unimed-guia').parse(textoExtraido);
 
 ---
 
-## Integração prevista — Fase 2 (LLM)
+## Integração Fase 2 (LLM) — implementada
 
-**Status: implementada.** Ver [`FASE2.spec.md`](FASE2.spec.md) e seção "Fase 2" acima.
+Ver [`FASE2.spec.md`](FASE2.spec.md) e a seção "Fase 2" acima.
 
-A Fase 1 expõe os artefatos que a Fase 2 consome:
+A Fase 1 expõe os artefatos que a UI/LLM consomem:
 
-| Artefato | Uso na Fase 2 |
-|----------|----------------|
+| Artefato | Uso |
+|----------|-----|
 | `.txt` | Texto completo para prompt da LLM |
 | `.csv` / `.xlsx` | Dados tabulares filtrados para análise/resumo |
 | `summary.files` | Lista de extrações com metadados |
-| `createServer` | Links para o usuário abrir arquivos e respostas JSON (Fase 2.4) |
-| `createLogger` | Rastreio de chamadas LLM no mesmo padrão NDJSON |
-| `adapters` | Padrão a seguir para `ollamaAdapter`, `openRouterAdapter` |
-
-**Fluxo sugerido Fase 2:**
+| `createServer` / `/open/:name` | Links para abrir arquivos e respostas JSON |
+| `createLogger` | Rastreio NDJSON (consumido pela aba Logs — Fase 4) |
 
 ```
 Fase 1 (extract + export) → usuário escolhe .txt/.csv/.xlsx → LLM adapter → .json + resumo
 ```
 
-A Fase 2 deve importar `src/api.js` e compor módulos sem duplicar extração/exportação.
-
 ---
 
-## Integração prevista — Fase 3 (instalador)
+## Integração prevista — instalador (futuro)
 
-A Fase 3 empacota o mesmo núcleo:
+Empacotar o mesmo núcleo em um instalador Windows:
 
-- **Entry point desktop:** `PdfSummarizerBuilder` + UI
+- **Entry point desktop:** `LlmSummarizerBuilder` + UI já autenticada
 - **CLI embutida:** `src/index.js` ou wrapper
-- **Diretórios padrão:** `output/`, `logs/` (gitignored)
+- **Diretórios padrão:** `output/`, `logs/`, `data/` (gitignored)
 - **Dependência Node:** `>= 20` empacotado no instalador
 
-O instalador não precisa reimplementar scan/extract/export — apenas orquestra a API existente.
+O instalador não precisa reimplementar scan/extract/export/auth — apenas orquestra a API existente.
 
 ---
 
 ## Testes
 
 ```bash
-npm test              # 111 testes, TDD
-npm run test:coverage # cobertura >= 80%
+npm test              # suite completa (Fases 1–5)
+npm run test:coverage # cobertura
 ```
 
-Estrutura espelha os módulos: `tests/scanner.test.js`, `tests/extractor.test.js`, `tests/exporter.test.js`, `tests/tableParser.test.js`, etc.
+Estrutura espelha os módulos: `tests/scanner.test.js`, `tests/authService.test.js`, `tests/logViewerService.test.js`, `tests/authApi.test.js`, etc.
 
 ---
 
@@ -439,20 +555,29 @@ Estrutura espelha os módulos: `tests/scanner.test.js`, `tests/extractor.test.js
 | Script | Descrição |
 |--------|-----------|
 | `npm start` | CLI Fase 1 — pipeline completo |
-| `npm run start:web` | Servidor web Fase 2 (UI + API) |
+| `npm run start:web` | Servidor web (UI + API + auth) |
 | `npm test` | Suite de testes |
 | `npm run test:coverage` | Cobertura |
 | `node scripts/create-fixtures.js` | Gera PDFs de exemplo em `fixtures/` |
 
 ---
 
-## Segurança (Fase 1)
+## Segurança
 
+**Fase 1–4 (base):**
 - Sem `eval` nem execução de código embarcado em PDF
-- Sem requisições HTTP externas (apenas servidor local)
-- Path traversal bloqueado no `linker`
+- Path traversal bloqueado (`linker`, logs, static, open)
 - Saídas isoladas em `output/` e `logs/`
 - Nomes de arquivo sanitizados (`sanitizeBaseName`)
+- Bind padrão em `127.0.0.1`
+
+**Fase 5 (auth):**
+- Senhas com `scrypt` + salt por usuário (`timingSafeEqual`)
+- Refresh tokens armazenados apenas como SHA-256; rotação a cada uso
+- Segredo TOTP e tokens OpenRouter criptografados (AES-256-GCM / `APP_SECRET_KEY`)
+- JWT HS256 com `kind` distinto para access vs elevation
+- Elevação amarrada ao `sub` do usuário; role e elevação revalidadas em toda rota sensível
+- Nenhuma dependência npm nova para JWT/TOTP — só `crypto` nativo
 
 ---
 
@@ -460,4 +585,7 @@ Estrutura espelha os módulos: `tests/scanner.test.js`, `tests/extractor.test.js
 
 - Especificação TDD Fase 1: [`FASE1.spec.md`](FASE1.spec.md)
 - Especificação SDD Fase 2: [`FASE2.spec.md`](FASE2.spec.md)
-- Visão original das 3 fases: [`README_OLD.md`](README_OLD.md)
+- Especificação SDD Fase 4 (Logs): [`FASE4.spec.md`](FASE4.spec.md)
+- Especificação SDD/TDD Fase 5 (Auth): [`FASE5.spec.md`](FASE5.spec.md)
+- Especificação SDD/TDD Fase 6 (Multi-tenant): [`FASE6.spec.md`](FASE6.spec.md)
+- Visão original das fases: [`README_OLD.md`](README_OLD.md)

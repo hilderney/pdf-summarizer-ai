@@ -21,8 +21,10 @@
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",
     "iconv-lite": "^0.7.3",
+    "mysql2": "^3.23.1",
     "pdf-parse": "^2.4.5",
-    "pino": "^10.3.1"
+    "pino": "^10.3.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "jest": "^30.4.2",

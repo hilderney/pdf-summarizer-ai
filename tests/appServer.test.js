@@ -66,8 +66,11 @@ describe('appServer', () => {
     await fs.mkdir(path.join(staticDir, 'js'), { recursive: true });
     await fs.writeFile(path.join(staticDir, 'index.html'), '<html><body>App</body></html>');
     await fs.writeFile(path.join(staticDir, 'css', 'app.css'), 'body {}');
-    await writeTextFile(outputDir, 'sample.json', '{"ok":true}');
-    await writeTextFile(outputDir, 'doc.txt', 'hello');
+    const { OPEN_MODE_USER_ID } = require('../src/utils/userWorkspace');
+    const userOutputDir = path.join(outputDir, OPEN_MODE_USER_ID);
+    await fs.mkdir(userOutputDir, { recursive: true });
+    await writeTextFile(userOutputDir, 'sample.json', '{"ok":true}');
+    await writeTextFile(userOutputDir, 'doc.txt', 'hello');
     await writeMinimalPdf(inputDir, 'doc.pdf');
 
     persistence = createPersistenceAdapter('memory');

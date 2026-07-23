@@ -25,9 +25,18 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
       throw error;
     }
   }
+
   function validateProvider(provider) {
     if (!VALID_PROVIDERS.has(provider)) {
       throw new ValidationError(`Invalid provider: ${provider}`);
+    }
+  }
+
+  function requireUserId(userId) {
+    if (!userId) {
+      const error = new ValidationError('userId is required');
+      error.statusCode = 400;
+      throw error;
     }
   }
 
@@ -38,7 +47,8 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
     return { ...model };
   }
 
-  async function create(data) {
+  async function create(data, userId) {
+    requireUserId(userId);
     validateProvider(data.provider);
 
     if (data.provider === 'openrouter' && !data.token) {
@@ -53,6 +63,7 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
       data.provider === 'openrouter' && data.token ? cryptoAdapter.encrypt(data.token) : null;
 
     const model = await persistence.createLlmModel({
+      userId,
       name: data.name,
       provider: data.provider,
       modelId: data.modelId,
@@ -64,22 +75,26 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
     return toPublicDto(model);
   }
 
-  async function get(id) {
-    return toPublicDto(await persistence.getLlmModel(id));
+  async function get(id, userId) {
+    requireUserId(userId);
+    return toPublicDto(await persistence.getLlmModel(id, userId));
   }
 
-  async function list(filter = {}) {
-    const models = await persistence.listLlmModels(filter);
+  async function list(filter = {}, userId) {
+    requireUserId(userId);
+    const models = await persistence.listLlmModels({ ...filter, userId });
     return models.map(toPublicDto);
   }
 
-  async function listForDropdown() {
-    const models = await persistence.listLlmModels();
+  async function listForDropdown(userId) {
+    requireUserId(userId);
+    const models = await persistence.listLlmModels({ userId });
     return models.map(({ id, name, provider, isDefault }) => ({ id, name, provider, isDefault }));
   }
 
-  async function update(id, data) {
-    const existing = await persistence.getLlmModel(id);
+  async function update(id, data, userId) {
+    requireUserId(userId);
+    const existing = await persistence.getLlmModel(id, userId);
     if (!existing) {
       return null;
     }
@@ -91,9 +106,7 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
     const provider = data.provider ?? existing.provider;
     if (provider === 'openrouter') {
       const willHaveToken =
-        data.token !== undefined
-          ? Boolean(data.token)
-          : existing.hasToken;
+        data.token !== undefined ? Boolean(data.token) : existing.hasToken;
       if (!willHaveToken) {
         throw new ValidationError('OpenRouter models require a token');
       }
@@ -112,13 +125,19 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
         provider === 'openrouter' && data.token ? cryptoAdapter.encrypt(data.token) : null;
     }
 
-    const updated = await persistence.updateLlmModel(id, payload);
+    const updated = await persistence.updateLlmModel(id, payload, userId);
     return toPublicDto(updated);
   }
 
-  async function remove(id) {
+  async function remove(id, userId) {
+    requireUserId(userId);
+    const existing = await persistence.getLlmModel(id, userId);
+    if (!existing) {
+      return false;
+    }
+
     const activeJobs = persistence.countActiveJobsForModel
-      ? await persistence.countActiveJobsForModel(id)
+      ? await persistence.countActiveJobsForModel(id, userId)
       : 0;
 
     if (activeJobs > 0) {
@@ -127,17 +146,18 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
       throw error;
     }
 
-    return persistence.deleteLlmModel(id);
+    return persistence.deleteLlmModel(id, userId);
   }
 
-  async function healthCheck(id) {
-    const model = await persistence.getLlmModel(id);
+  async function healthCheck(id, userId) {
+    requireUserId(userId);
+    const model = await persistence.getLlmModel(id, userId);
     if (!model) {
       return { ok: false, error: 'Model not found' };
     }
 
     const raw = persistence.getLlmModelRaw
-      ? persistence.getLlmModelRaw(id)
+      ? await persistence.getLlmModelRaw(id, userId)
       : null;
 
     let token;
@@ -156,23 +176,24 @@ function createLlmModelService({ persistence, cryptoAdapter = createCryptoAdapte
       throw error;
     }
 
-    const config = {
+    const adapter = createLlmAdapter(model.provider);
+    const ok = await adapter.healthCheck({
       baseUrl: model.baseUrl,
       token: token ?? undefined,
-    };
-
-    const adapter = createLlmAdapter(model.provider);
-    const ok = await adapter.healthCheck(config);
+    });
     return { ok, provider: model.provider, modelId: model.modelId };
   }
 
-  async function getModelConfig(id) {
-    const model = await persistence.getLlmModel(id);
+  async function getModelConfig(id, userId) {
+    requireUserId(userId);
+    const model = await persistence.getLlmModel(id, userId);
     if (!model) {
       return null;
     }
 
-    const raw = persistence.getLlmModelRaw ? persistence.getLlmModelRaw(id) : null;
+    const raw = persistence.getLlmModelRaw
+      ? await persistence.getLlmModelRaw(id, userId)
+      : null;
 
     return {
       ...model,

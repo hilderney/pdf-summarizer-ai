@@ -259,12 +259,13 @@
       for (const file of files) {
         const tr = document.createElement('tr');
         const safeName = utils.escapeHtml(file.name);
+        const authorizedUrl = api.withAuthQuery(file.url);
         tr.innerHTML = `
         <td>${safeName}</td>
         <td>
           <div class="file-actions">
-            <a class="file-action" href="${file.url}" target="_blank" rel="noopener">${ICON_OPEN}<span>Abrir</span></a>
-            <a class="file-action file-download" href="${file.url}" download="${safeName}">${ICON_DOWNLOAD}<span>Download</span></a>
+            <a class="file-action" href="${authorizedUrl}" target="_blank" rel="noopener">${ICON_OPEN}<span>Abrir</span></a>
+            <a class="file-action file-download" href="${authorizedUrl}" download="${safeName}">${ICON_DOWNLOAD}<span>Download</span></a>
             <button type="button" class="file-action file-delete" data-delete-file="${safeName}">${ICON_DELETE}<span>Excluir</span></button>
           </div>
         </td>`;

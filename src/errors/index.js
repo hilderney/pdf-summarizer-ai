@@ -27,6 +27,32 @@ class SpreadsheetError extends AppError {
     this.code = code;
   }
 }
+class LogViewerError extends AppError {
+  constructor(message, { statusCode = 500, code, cause } = {}) {
+    super(message, cause);
+    this.name = 'LogViewerError';
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+class AuthError extends AppError {
+  constructor(message, { statusCode = 401, code, cause } = {}) {
+    super(message, cause);
+    this.name = 'AuthError';
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+class TotpError extends AppError {
+  constructor(message, { statusCode = 400, code, cause } = {}) {
+    super(message, cause);
+    this.name = 'TotpError';
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
 
 module.exports = {
   AppError,
@@ -40,4 +66,7 @@ module.exports = {
   CryptoError,
   FileReaderError,
   SpreadsheetError,
+  LogViewerError,
+  AuthError,
+  TotpError,
 };

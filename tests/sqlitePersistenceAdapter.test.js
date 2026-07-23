@@ -16,6 +16,13 @@ describe('sqlitePersistence', () => {
     dbPath = path.join(tempDir, 'test.db');
     persistence = createPersistenceAdapter('sqlite', { dbPath });
     await persistence.init();
+    persistence.db
+      .prepare(
+        `INSERT INTO users
+        (id, username, password_hash, role, totp_enabled, subscription_status, created_at, updated_at)
+        VALUES ('test-user-1', 'test-user-1', 'x', 'ADM', 0, 'active', datetime('now'), datetime('now'))`,
+      )
+      .run();
   });
 
   afterEach(async () => {
@@ -30,6 +37,7 @@ describe('sqlitePersistence', () => {
 
   test('[F2-02] createLlmModel deve persistir e retornar DTO sem token plaintext', async () => {
     const model = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'GPT-4o Mini',
       provider: 'openrouter',
       modelId: 'openai/gpt-4o-mini',
@@ -46,6 +54,7 @@ describe('sqlitePersistence', () => {
 
   test('[F2-03] getLlmModel deve recuperar modelo por id', async () => {
     const created = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'Llama 3',
       provider: 'ollama',
       modelId: 'llama3',
@@ -58,12 +67,14 @@ describe('sqlitePersistence', () => {
 
   test('[F2-04] listLlmModels deve filtrar por provider', async () => {
     await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'Ollama',
       provider: 'ollama',
       modelId: 'llama3',
       isDefault: false,
     });
     await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'OpenRouter',
       provider: 'openrouter',
       modelId: 'openai/gpt-4o-mini',
@@ -71,13 +82,14 @@ describe('sqlitePersistence', () => {
       isDefault: false,
     });
 
-    const ollamaOnly = await persistence.listLlmModels({ provider: 'ollama' });
+    const ollamaOnly = await persistence.listLlmModels({ userId: 'test-user-1', provider: 'ollama' });
     expect(ollamaOnly).toHaveLength(1);
     expect(ollamaOnly[0].provider).toBe('ollama');
   });
 
   test('[F2-05] updateLlmModel deve atualizar updated_at', async () => {
     const created = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'Old Name',
       provider: 'ollama',
       modelId: 'llama3',
@@ -91,6 +103,7 @@ describe('sqlitePersistence', () => {
 
   test('[F2-06] deleteLlmModel deve remover registro', async () => {
     const created = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'To Delete',
       provider: 'ollama',
       modelId: 'llama3',
@@ -104,12 +117,14 @@ describe('sqlitePersistence', () => {
 
   test('[F2-07] is_default=true deve desmarcar outros defaults', async () => {
     const first = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'First',
       provider: 'ollama',
       modelId: 'llama3',
       isDefault: true,
     });
     const second = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'Second',
       provider: 'ollama',
       modelId: 'llama3.1',
@@ -123,6 +138,7 @@ describe('sqlitePersistence', () => {
 
   test('[F2-08] createLlmJob / getLlmJob / listLlmJobs devem funcionar', async () => {
     const model = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'Model',
       provider: 'ollama',
       modelId: 'llama3',
@@ -130,6 +146,7 @@ describe('sqlitePersistence', () => {
     });
 
     const job = await persistence.createLlmJob({
+      userId: 'test-user-1',
       llmModelId: model.id,
       sourceFile: 'doc.txt',
       sourceType: 'txt',
@@ -140,7 +157,7 @@ describe('sqlitePersistence', () => {
     const found = await persistence.getLlmJob(job.id);
     expect(found.summary).toBe('Done');
 
-    const jobs = await persistence.listLlmJobs({ llmModelId: model.id });
+    const jobs = await persistence.listLlmJobs({ userId: 'test-user-1', llmModelId: model.id });
     expect(jobs).toHaveLength(1);
   });
 
@@ -149,6 +166,7 @@ describe('sqlitePersistence', () => {
     const encrypted = encrypt(plainToken, { secret: TEST_KEY });
 
     const created = await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'Secure',
       provider: 'openrouter',
       modelId: 'openai/gpt-4o-mini',
@@ -166,6 +184,7 @@ describe('sqlitePersistence', () => {
 
   test('[F2-10] close() deve permitir reabrir o mesmo dbPath', async () => {
     await persistence.createLlmModel({
+      userId: 'test-user-1',
       name: 'Persist',
       provider: 'ollama',
       modelId: 'llama3',
@@ -176,7 +195,7 @@ describe('sqlitePersistence', () => {
 
     const reopened = createPersistenceAdapter('sqlite', { dbPath });
     await reopened.init();
-    const models = await reopened.listLlmModels();
+    const models = await reopened.listLlmModels({ userId: 'test-user-1' });
     expect(models).toHaveLength(1);
     await reopened.close();
   });
